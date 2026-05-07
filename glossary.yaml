@@ -27,11 +27,18 @@ substitutions:
   
   # 用語誤認識
   - {pattern: "お声センター", replacement: "おパイセン", type: literal}
+  - {pattern: "おぱいセンター氏", replacement: "おパイセン", type: literal}
+  - {pattern: "おぱいセンター", replacement: "おパイセン", type: literal}
   - {pattern: "足下痛", replacement: "朝活", type: literal}
   - {pattern: "ウソギトビウォーク", replacement: "うさぎ跳びウォーク", type: literal}
   - {pattern: "ウソギ", replacement: "うさぎ", type: literal}
   - {pattern: "バンセット", replacement: "股関節", type: literal}
   - {pattern: "バンテッド", replacement: "股関節", type: literal}
+  - {pattern: "バンセンス", replacement: "股関節", type: literal}
+  - {pattern: "サカツ", replacement: "朝活", type: literal}
+  - {pattern: "体液なんです", replacement: "体癖なんです", type: literal}
+  - {pattern: "それが体液", replacement: "それが体癖", type: literal}
+  - {pattern: "体液", replacement: "体癖", type: regex}
   
   # その他、出力を見て気になったもの
   - {pattern: "内反照子", replacement: "内反小趾", type: literal}
@@ -39,6 +46,8 @@ substitutions:
   - {pattern: "HIGH AXEL", replacement: "ハイアクセル", type: literal}
   - {pattern: "HIGH LEVEL", replacement: "ハイレベル", type: literal}
   - {pattern: "ハイアクセル", replacement: "ハイアクセル", type: literal}  # 念のため統一
+  - {pattern: "バイシャツ", replacement: "自己解釈", type: literal}
+  - {pattern: "ひもむしウォーク", replacement: "イモムシウォーク", type: literal}
 
 # 3. 重要語リスト（信頼度判定の参考に使用）
 important_terms:
