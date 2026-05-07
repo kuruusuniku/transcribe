@@ -1,0 +1,54 @@
+paths:
+  work_dir: ./data/work
+  output_dir: ./data/output
+  state_db: ./data/state.db
+  log_dir: ./logs
+
+youtube:
+  # ブラウザCookieを使用（限定公開動画用）
+  # 選択肢: chrome / firefox / edge / brave / none
+  # none を指定するとCookieなしでDL（公開動画のテスト用）
+  #
+  # 【重要】Windowsでは Firefox を推奨します。
+  # Chrome 127以降は App-Bound Encryption により yt-dlp から Cookie を
+  # 読み出せなくなりました。Edge も同じChromiumベースのため同様の問題が
+  # 発生する可能性があります。Firefox はこの制限がないため安定動作します。
+  cookies_from_browser: firefox
+
+audio_separation:
+  # ボーカル分離（BGM除去）。精度↑だが時間↑
+  enabled: false
+  model: htdemucs
+  device: cuda
+
+transcription:
+  model: large-v3
+  # 量子化設定（環境に応じて選択）
+  # int8           : VRAM 4GB前後の旧世代GPU向け（Pascal/Turing等、Tensor Core非対応環境）
+  # int8_float16   : VRAM 4-6GBのTensor Core対応GPU向け（推奨）
+  # float16        : VRAM 8GB以上の環境向け（高品質）
+  # float32        : 最高品質（VRAM 12GB以上推奨）
+  compute_type: int8_float16
+  device: cuda
+  language: ja
+  beam_size: 5
+  condition_on_previous_text: false  # ハルシネーション連鎖防止
+  vad_filter: true
+  vad_parameters:
+    min_silence_duration_ms: 1000
+    threshold: 0.5
+    speech_pad_ms: 200
+  # initial_prompt は glossary.yaml から自動生成
+
+output:
+  timestamp_interval_seconds: 60
+  confidence_threshold: -1.0
+
+retry:
+  max_attempts: 3
+  backoff_seconds: [60, 300, 900]
+
+logging:
+  level: INFO
+  console: true
+  file: true

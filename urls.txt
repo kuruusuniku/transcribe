@@ -1,6 +1,0 @@
-# 処理対象URLを1行1URLで記入してください
-# # で始まる行はコメントとして無視されます
-# 例:
-# https://www.youtube.com/watch?v=xxxxxxxxxxx
-
-https://youtu.be/LUFUmoXldyk?si=x8NXc-DdEjjVwoXO
