@@ -132,12 +132,15 @@ def _write_markdown(
         lines.append("")
 
         for seg in buckets[bucket_start]:
-            text = seg.text
-            if seg.low_confidence:
-                text = f"⚠️[要確認: 低信頼] {text}"
+            if seg.original_text is not None:
+                # 重複圧縮済みセグメント — マーカーをそのまま表示
+                lines.append(seg.text)
+            elif seg.low_confidence:
+                lines.append(f"⚠️[要確認: 低信頼] {seg.text}")
             elif seg.important_term_hit and seg.no_speech_prob > 0.5:
-                text = f"⚠️[要注意: 無音疑い] {text}"
-            lines.append(text)
+                lines.append(f"⚠️[要注意: 無音疑い] {seg.text}")
+            else:
+                lines.append(seg.text)
 
         lines.append("")
 
@@ -170,6 +173,7 @@ def _write_segments_json(
                 "start": seg.start,
                 "end": seg.end,
                 "text": seg.text,
+                **({"original_text": seg.original_text} if seg.original_text is not None else {}),
                 "avg_logprob": seg.avg_logprob,
                 "no_speech_prob": seg.no_speech_prob,
                 "low_confidence": seg.low_confidence,

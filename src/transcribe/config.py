@@ -33,7 +33,9 @@ class AudioSeparationConfig:
 
 @dataclass
 class VadParameters:
-    min_silence_duration_ms: int = 500
+    min_silence_duration_ms: int = 1000
+    threshold: float = 0.5
+    speech_pad_ms: int = 200
 
 
 @dataclass
@@ -43,6 +45,7 @@ class TranscriptionConfig:
     device: str = "cuda"
     language: str = "ja"
     beam_size: int = 5
+    condition_on_previous_text: bool = False
     vad_filter: bool = True
     vad_parameters: VadParameters = field(default_factory=VadParameters)
 
@@ -133,8 +136,11 @@ def load_config(config_path: Path) -> AppConfig:
         language=tr_raw.get("language", "ja"),
         beam_size=tr_raw.get("beam_size", 5),
         vad_filter=tr_raw.get("vad_filter", True),
+        condition_on_previous_text=tr_raw.get("condition_on_previous_text", False),
         vad_parameters=VadParameters(
-            min_silence_duration_ms=vad_raw.get("min_silence_duration_ms", 500),
+            min_silence_duration_ms=vad_raw.get("min_silence_duration_ms", 1000),
+            threshold=vad_raw.get("threshold", 0.5),
+            speech_pad_ms=vad_raw.get("speech_pad_ms", 200),
         ),
     )
 

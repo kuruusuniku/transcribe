@@ -47,15 +47,23 @@ def transcribe(
     model: WhisperModel = model_cache["model"]
 
     initial_prompt = glossary.context.strip() or None
+    vad_p = cfg.transcription.vad_parameters
     vad_params = {
-        "min_silence_duration_ms": cfg.transcription.vad_parameters.min_silence_duration_ms,
+        "min_silence_duration_ms": vad_p.min_silence_duration_ms,
+        "threshold": vad_p.threshold,
+        "speech_pad_ms": vad_p.speech_pad_ms,
     }
 
-    logger.info(f"文字起こし開始: {audio_path.name}")
+    logger.info(
+        f"文字起こし開始: {audio_path.name}  "
+        f"condition_on_previous_text={cfg.transcription.condition_on_previous_text}  "
+        f"vad={vad_params}"
+    )
     segments_iter, info = model.transcribe(
         str(audio_path),
         language=cfg.transcription.language,
         beam_size=cfg.transcription.beam_size,
+        condition_on_previous_text=cfg.transcription.condition_on_previous_text,
         vad_filter=cfg.transcription.vad_filter,
         vad_parameters=vad_params,
         initial_prompt=initial_prompt,

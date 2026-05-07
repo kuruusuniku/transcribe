@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from .config import AppConfig, GlossaryConfig
-from .postprocess import postprocess
+from .postprocess import compress_repetitions, postprocess
 from .stages.downloader import download_audio
 from .stages.formatter import format_outputs
 from .stages.separator import separate_audio
@@ -122,12 +122,13 @@ def _run_job(
     update_status(db, job_id, "transcribing")
     raw_gen = transcribe(audio_path, cfg, glossary, model_cache)
     processed_gen = postprocess(raw_gen, cfg, glossary)
+    compressed_gen = compress_repetitions(processed_gen)
 
     # 5. フォーマット出力（ここでジェネレータを消費し、リスト化・ファイル書き出し）
     update_status(db, job_id, "formatting")
     job_output_dir = _output_dir_for(output_root, dl_result.upload_date, dl_result.video_id)
     segment_count = format_outputs(
-        segments=processed_gen,
+        segments=compressed_gen,
         video_id=dl_result.video_id,
         url=url,
         title=dl_result.title,

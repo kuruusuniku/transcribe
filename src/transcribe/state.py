@@ -81,6 +81,32 @@ def get_job_by_id(db_path: Path, job_id: int) -> sqlite3.Row | None:
         return conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
 
 
+def get_job_by_url_or_id(db_path: Path, url_or_id: str) -> sqlite3.Row | None:
+    """URL完全一致を優先し、次に video_id で検索する。"""
+    with _connect(db_path) as conn:
+        row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url_or_id,)).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE video_id = ?", (url_or_id,)
+            ).fetchone()
+    return row
+
+
+def reset_for_rerun(db_path: Path, job_id: int) -> None:
+    """ジョブを完全初期化する（rerun 用。retry_count も 0 にリセット）。"""
+    with _connect(db_path) as conn:
+        conn.execute(
+            """UPDATE jobs
+               SET status = 'queued',
+                   retry_count = 0,
+                   error_message = NULL,
+                   output_dir = NULL,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (job_id,),
+        )
+
+
 def update_status(
     db_path: Path,
     job_id: int,
