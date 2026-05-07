@@ -1,0 +1,41 @@
+paths:
+  work_dir: ./data/work
+  output_dir: ./data/output
+  state_db: ./data/state.db
+  log_dir: ./logs
+
+youtube:
+  # ブラウザCookieを使用（限定公開動画用）
+  # chrome / firefox / edge / brave のいずれか
+  # none を指定するとCookieなしでDL（公開動画のテスト用）
+  cookies_from_browser: firefox
+
+audio_separation:
+  # ボーカル分離（BGM除去）。精度↑だが時間↑
+  enabled: false
+  model: htdemucs
+  device: cuda
+
+transcription:
+  model: large-v3
+  compute_type: int8  # GTX 1050 Ti (Pascal/CC6.1) は int8_float16 の Tensor Core 非対応のため int8 を使用
+  device: cuda
+  language: ja
+  beam_size: 5
+  vad_filter: true
+  vad_parameters:
+    min_silence_duration_ms: 500
+  # initial_prompt は glossary.yaml から自動生成
+
+output:
+  timestamp_interval_seconds: 60
+  confidence_threshold: -1.0
+
+retry:
+  max_attempts: 3
+  backoff_seconds: [60, 300, 900]
+
+logging:
+  level: INFO
+  console: true
+  file: true

@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# 仮想環境
+.venv
+
+# データ・一時ファイル
+data/work/
+data/state.db
+logs/
+
+# 設定（機密情報が入る可能性）
+# config.yaml は共有してよければ外す
+
+# OS
+.DS_Store
+Thumbs.db

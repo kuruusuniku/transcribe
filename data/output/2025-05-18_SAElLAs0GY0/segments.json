@@ -1,0 +1,552 @@
+{
+  "video_id": "SAElLAs0GY0",
+  "url": "https://www.youtube.com/watch?v=SAElLAs0GY0",
+  "title": "大切なお話と今年の大会について",
+  "transcribed_at": "2026-05-06T19:43:18+09:00",
+  "config": {
+    "model": "large-v3",
+    "audio_separation": false
+  },
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.38,
+      "text": "はいどうも、ぶらまじ田中です。",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=0s"
+    },
+    {
+      "start": 2.38,
+      "end": 5.46,
+      "text": "皆さん、お久しぶりでございます。",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=2s"
+    },
+    {
+      "start": 5.46,
+      "end": 9.3,
+      "text": "Xとかインスタとかは更新してたんですけど、",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=5s"
+    },
+    {
+      "start": 9.3,
+      "end": 14.96,
+      "text": "YouTubeに手が回らなかったというのは言い訳で、",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=9s"
+    },
+    {
+      "start": 14.96,
+      "end": 21.77,
+      "text": "毎日筋トレして力尽きてました。",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=14s"
+    },
+    {
+      "start": 21.77,
+      "end": 23.81,
+      "text": "はい、申し訳ございません。",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=21s"
+    },
+    {
+      "start": 23.81,
+      "end": 28.31,
+      "text": "でですね、またちょくちょくYouTube撮っていこうと思ってます。",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=23s"
+    },
+    {
+      "start": 28.31,
+      "end": 30.81,
+      "text": "ショート動画メインにしていこうと思ってますので、",
+      "avg_logprob": -0.1980560062961145,
+      "no_speech_prob": 0.0878138467669487,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=28s"
+    },
+    {
+      "start": 30.81,
+      "end": 33.21,
+      "text": "そちらも見ていただければと思います。",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=30s"
+    },
+    {
+      "start": 33.21,
+      "end": 34.51,
+      "text": "よろしく頼む。",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=33s"
+    },
+    {
+      "start": 34.51,
+      "end": 37.81,
+      "text": "ということで、今日は皆さんに",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=34s"
+    },
+    {
+      "start": 37.81,
+      "end": 42.08,
+      "text": "重大発表がございます。",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=37s"
+    },
+    {
+      "start": 42.08,
+      "end": 47.4,
+      "text": "今年参戦する、というか今年挑戦する大会ですね。",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=42s"
+    },
+    {
+      "start": 47.4,
+      "end": 48.6,
+      "text": "まあちょっとなんか、",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=47s"
+    },
+    {
+      "start": 48.6,
+      "end": 51.96,
+      "text": "あ、ぶらまじちょっと黒くなってきてない?",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=48s"
+    },
+    {
+      "start": 51.96,
+      "end": 55.42,
+      "text": "って思ってる方もいらっしゃると思うんですけど、",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=51s"
+    },
+    {
+      "start": 55.42,
+      "end": 58.65,
+      "text": "今年ももちろん大会に出ます。",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=55s"
+    },
+    {
+      "start": 58.65,
+      "end": 59.94,
+      "text": "はい。",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=58s"
+    },
+    {
+      "start": 59.94,
+      "end": 62.24,
+      "text": "で、初戦はもう8月なんですけど、",
+      "avg_logprob": -0.1905741284984027,
+      "no_speech_prob": 0.16491717100143433,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=59s"
+    },
+    {
+      "start": 62.24,
+      "end": 64.58,
+      "text": "その前に、え?",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=62s"
+    },
+    {
+      "start": 64.58,
+      "end": 67.36,
+      "text": "実は、7月21日にある",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=64s"
+    },
+    {
+      "start": 67.36,
+      "end": 71.28,
+      "text": "福井ボディービルディング&フィットネスチャンピオンシップ2025。",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=67s"
+    },
+    {
+      "start": 71.28,
+      "end": 77.7,
+      "text": "こちらでですね、ゲストを務めさせていただくことになりました。",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=71s"
+    },
+    {
+      "start": 77.7,
+      "end": 80.62,
+      "text": "いや、本当に光栄なことでちょっともうなんかこう、",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=77s"
+    },
+    {
+      "start": 80.62,
+      "end": 84.0,
+      "text": "考えるだけでちょっとこみ上げてくるものがあるんですけど、",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=80s"
+    },
+    {
+      "start": 84.0,
+      "end": 88.7,
+      "text": "こんな新参者で、そんなに成績もまだ残せていない私に",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=84s"
+    },
+    {
+      "start": 88.7,
+      "end": 92.38,
+      "text": "いただけたっていうのは、これからの期待をしていただけてるんだと、",
+      "avg_logprob": -0.16679264950436473,
+      "no_speech_prob": 0.005852131173014641,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=88s"
+    },
+    {
+      "start": 92.38,
+      "end": 93.08,
+      "text": "思います。",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=92s"
+    },
+    {
+      "start": 93.08,
+      "end": 96.82,
+      "text": "本当に、本当に嬉しいです。",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=93s"
+    },
+    {
+      "start": 96.82,
+      "end": 101.66,
+      "text": "大会のゲストっていうのは、大会の合間にボディービルダーがやるような",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=96s"
+    },
+    {
+      "start": 101.66,
+      "end": 105.66,
+      "text": "フリーポーズをやらせていただくという形ですね。",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=101s"
+    },
+    {
+      "start": 105.66,
+      "end": 110.98,
+      "text": "考えられるの?みんな。",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=105s"
+    },
+    {
+      "start": 110.98,
+      "end": 113.34,
+      "text": "もう本当に嬉しい。",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=110s"
+    },
+    {
+      "start": 113.34,
+      "end": 115.26,
+      "text": "本当にみんな見に来てほしい。",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=113s"
+    },
+    {
+      "start": 115.26,
+      "end": 119.84,
+      "text": "ゲストポーズでは、私の思いを全てぶつけられたらなと。",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=115s"
+    },
+    {
+      "start": 119.84,
+      "end": 130.28,
+      "text": "皆さんに感動と元気と愛と勇気を与えられるような、",
+      "avg_logprob": -0.14553528624092973,
+      "no_speech_prob": 0.03588412329554558,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=119s"
+    },
+    {
+      "start": 130.28,
+      "end": 135.86,
+      "text": "時間にさせていただきますので、本当にみんな見に来てほしい。",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=130s"
+    },
+    {
+      "start": 135.86,
+      "end": 136.82,
+      "text": "はい。",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=135s"
+    },
+    {
+      "start": 136.82,
+      "end": 140.78,
+      "text": "ということで、そこから8月1日、",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=136s"
+    },
+    {
+      "start": 140.78,
+      "end": 143.55,
+      "text": "スポルテック大会に挑戦します。",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=140s"
+    },
+    {
+      "start": 143.55,
+      "end": 146.35,
+      "text": "あともう一つは、9月21日、",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=143s"
+    },
+    {
+      "start": 146.35,
+      "end": 148.19,
+      "text": "兵庫県神戸…",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=146s"
+    },
+    {
+      "start": 148.19,
+      "end": 153.78,
+      "text": "兵庫県神戸市であるオールジャパンの大会に挑戦します。",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=148s"
+    },
+    {
+      "start": 153.78,
+      "end": 156.98,
+      "text": "今年はもうJBBF1本でやっていきますので、",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=153s"
+    },
+    {
+      "start": 156.98,
+      "end": 159.56,
+      "text": "ぜひ応援していただけたらなと思います。",
+      "avg_logprob": -0.18213223374408224,
+      "no_speech_prob": 0.026853572577238083,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=156s"
+    },
+    {
+      "start": 159.56,
+      "end": 161.98,
+      "text": "去年足りなかったのが上半身のサイズ。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=159s"
+    },
+    {
+      "start": 161.98,
+      "end": 163.94,
+      "text": "あとシリハムのサイズですね。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=161s"
+    },
+    {
+      "start": 163.94,
+      "end": 165.72,
+      "text": "ちょっと課題だったので、",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=163s"
+    },
+    {
+      "start": 165.72,
+      "end": 167.98,
+      "text": "足取りの頻度を減らして、",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=165s"
+    },
+    {
+      "start": 167.98,
+      "end": 170.06,
+      "text": "シリハムに特化したメニューと、",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=167s"
+    },
+    {
+      "start": 170.06,
+      "end": 172.98,
+      "text": "あと上半身の頻度を増やしました。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=170s"
+    },
+    {
+      "start": 172.98,
+      "end": 176.18,
+      "text": "だいぶね、自分の中では変わったと思います。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=172s"
+    },
+    {
+      "start": 176.18,
+      "end": 180.1,
+      "text": "YouTubeを更新できないぐらいトレーニングしていたので。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=176s"
+    },
+    {
+      "start": 180.1,
+      "end": 181.89,
+      "text": "ごめんなさい。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=180s"
+    },
+    {
+      "start": 181.89,
+      "end": 184.57,
+      "text": "それじゃあ、チャンネル登録とグッドボタン、",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=181s"
+    },
+    {
+      "start": 184.57,
+      "end": 185.77,
+      "text": "よろしくお願いします。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=184s"
+    },
+    {
+      "start": 185.77,
+      "end": 186.85,
+      "text": "よろしく頼む。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=185s"
+    },
+    {
+      "start": 186.85,
+      "end": 190.5,
+      "text": "それではみんな、今日もお疲れ様でした。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=186s"
+    },
+    {
+      "start": 190.5,
+      "end": 191.08,
+      "text": "またね。",
+      "avg_logprob": -0.16137885796220114,
+      "no_speech_prob": 0.012382827699184418,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=190s"
+    },
+    {
+      "start": 191.2,
+      "end": 193.2,
+      "text": "お疲れ様でした。",
+      "avg_logprob": -0.7602093279361725,
+      "no_speech_prob": 0.24861615896224976,
+      "low_confidence": false,
+      "youtube_link": "https://www.youtube.com/watch?v=SAElLAs0GY0&t=191s"
+    }
+  ]
+}

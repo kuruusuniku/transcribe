@@ -1,0 +1,75 @@
+# 1. Whisperのinitial_promptに注入される語彙ヒント
+#    ※ initial_promptは244トークンが上限。長すぎる場合は冒頭から切り詰められる
+context: |
+  これは武術・身体技法の稽古指導の録画です。指導者が生徒に対して
+  身体の使い方、立ち方、構え、呼吸法などを解説しています。
+  以下の用語が頻出します:
+  中足靭帯、臍下丹田、中丹田、八つの心得、膝ぐにゃ、足裏球体、
+  スネO脚、O脚、ヒップヒンジ、鼠径部一の型、陰練、アイソレ、体癖、
+  肘締めコンパス、ボディヒアリング、体癖ダンス、ボディボイス、
+  閉じ蹲踞、開き蹲踞、中蹲踞、ローアクセル、ハイアクセル、
+  キネティックチェーン、ゴリラウォーク、クモストレッチ、
+  うさぎ跳びウォーク、ビーストウォーク、トリウォーク、
+  朝活、おパイセン、ジジイメソッド、骨盤運動、肩のアイソレーション、
+  腰のアイソレーション、コツを掴む。
+
+# 2. 後処理での置換ルール（誤認識パターン → 正しい表記）
+#    type: literal は単純置換、regex は正規表現
+substitutions:
+  # 例:
+  # - pattern: "せいか丹田"
+  #   replacement: "臍下丹田"
+  #   type: literal
+
+  # 人物・固有名詞
+  - {pattern: "穴あば", replacement: "あなぁ〜ば", type: literal}
+  - {pattern: "穴あばさん", replacement: "あなぁ〜ばさん", type: literal}
+  
+  # 用語誤認識
+  - {pattern: "お声センター", replacement: "おパイセン", type: literal}
+  - {pattern: "足下痛", replacement: "朝活", type: literal}
+  - {pattern: "ウソギトビウォーク", replacement: "うさぎ跳びウォーク", type: literal}
+  - {pattern: "ウソギ", replacement: "うさぎ", type: literal}
+  - {pattern: "バンセット", replacement: "股関節", type: literal}
+  - {pattern: "バンテッド", replacement: "股関節", type: literal}
+  
+  # その他、出力を見て気になったもの
+  - {pattern: "内反照子", replacement: "内反小趾", type: literal}
+  - {pattern: "下骨", replacement: "仮骨", type: literal}
+  - {pattern: "HIGH AXEL", replacement: "ハイアクセル", type: literal}
+  - {pattern: "HIGH LEVEL", replacement: "ハイレベル", type: literal}
+  - {pattern: "ハイアクセル", replacement: "ハイアクセル", type: literal}  # 念のため統一
+
+# 3. 重要語リスト（信頼度判定の参考に使用）
+important_terms:
+  - 中足靭帯
+  - 臍下丹田
+  - 中丹田
+  - 八つの心得
+  - 膝ぐにゃ
+  - 足裏球体
+  - スネO脚
+  - O脚
+  - ヒップヒンジ
+  - 鼠径部一の型
+  - 陰練
+  - アイソレ
+  - 体癖
+  - 肘締めコンパス
+  - ボディヒアリング
+  - 体癖ダンス
+  - 閉じ蹲踞
+  - 開き蹲踞
+  - 中蹲踞
+  - ローアクセル
+  - ハイアクセル
+  - キネティックチェーン
+  - ゴリラウォーク
+  - クモストレッチ
+  - うさぎ跳びウォーク
+  - ビーストウォーク
+  - トリウォーク
+  - ジジイメソッド
+  - 朝活
+  - おパイセン
+  - ボディボイス
