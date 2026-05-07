@@ -1,22 +1,43 @@
-# Python
+# ── Python ──────────────────────────────
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+*.py[cod]
+*.egg-info/
+.venv/          # uvで作った仮想環境
 
-# 仮想環境
-.venv
+# ── 機密情報（絶対に入れない） ──────────
+.env
+*.env.*
+credentials.json
+secrets/
+config/local_*.py
 
-# データ・一時ファイル
-data/work/
-data/state.db
-logs/
+# ── 大容量ファイル ───────────────────────
+# Whisperモデル（数百MB〜数GB）
+models/
+*.pt
+*.bin
+*.gguf
 
-# 設定（機密情報が入る可能性）
-# config.yaml は共有してよければ外す
+# 音声・動画ファイル
+*.mp3
+*.mp4
+*.wav
+*.m4a
+*.flac
+data/raw/
+output/audio/
 
-# OS
+# ── OS・エディタ ─────────────────────────
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# ── ログ・一時ファイル ───────────────────
+*.log
+logs/
+tmp/
+
+# ── データベース・状態ファイル ───────────
+*.db
+*.sqlite
