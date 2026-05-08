@@ -19,35 +19,52 @@ def separate_audio(audio_path: Path, work_dir: Path, cfg: AppConfig) -> Path:
         return audio_path
 
     import torch  # noqa: PLC0415
-    import demucs.api  # noqa: PLC0415
+    import torchaudio  # noqa: PLC0415
+    from demucs.apply import apply_model  # noqa: PLC0415
+    from demucs.audio import convert_audio  # noqa: PLC0415
+    from demucs.pretrained import get_model  # noqa: PLC0415
 
     model_name = cfg.audio_separation.model
     device = cfg.audio_separation.device
     logger.info(f"Demucs 音声分離開始: model={model_name}  device={device}")
 
-    separator = demucs.api.Separator(model=model_name, device=device)
-    _, separated = separator.separate_audio_file(audio_path)
+    model = get_model(name=model_name)
+    model.to(device)
+    model.eval()
 
-    # ボーカルトラック（vocals）を取り出す
-    vocals_key = "vocals"
-    if vocals_key not in separated:
-        available = list(separated.keys())
-        raise KeyError(f"Demucs の出力に 'vocals' がありません。利用可能: {available}")
+    wav = sources = vocals = None
+    try:
+        wav, sr = torchaudio.load(str(audio_path))
+        wav = convert_audio(wav, sr, model.samplerate, model.audio_channels)
+        wav = wav.to(device)
 
-    vocals_tensor = separated[vocals_key]
-    sample_rate = separator.samplerate
+        with torch.no_grad():
+            sources = apply_model(
+                model,
+                wav[None],
+                device=device,
+                progress=True,
+            )
 
-    out_path = work_dir / f"{audio_path.stem}_vocals.wav"
+        sources = sources[0]
+        vocals_idx = model.sources.index("vocals")
+        vocals = sources[vocals_idx].cpu()
 
-    import torchaudio  # noqa: PLC0415
+        out_path = work_dir / f"{audio_path.stem}_vocals.wav"
+        torchaudio.save(str(out_path), vocals, model.samplerate)
+        logger.info(f"音声分離完了 → {out_path.name}")
 
-    torchaudio.save(str(out_path), vocals_tensor.cpu(), sample_rate)
-    logger.info(f"音声分離完了 → {out_path.name}")
+        return out_path
 
-    # VRAM 解放（Whisperと同時ロード禁止）
-    del separator, separated, vocals_tensor
-    gc.collect()
-    torch.cuda.empty_cache()
-    logger.debug("Demucs VRAM 解放完了")
-
-    return out_path
+    finally:
+        del model
+        if wav is not None:
+            del wav
+        if sources is not None:
+            del sources
+        if vocals is not None:
+            del vocals
+        gc.collect()
+        if device == "cuda":
+            torch.cuda.empty_cache()
+        logger.debug("Demucs VRAM 解放完了")
