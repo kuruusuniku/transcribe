@@ -891,7 +891,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "demucs", specifier = ">=4.0.0" },
+    { name = "demucs", specifier = "==4.0.1" },
     { name = "faster-whisper", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.0" },
