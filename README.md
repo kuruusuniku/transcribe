@@ -174,3 +174,5 @@ uv run transcribe clean
 - `data/work/` — 一時ファイル
 - `data/state.db` — ジョブ管理DB
 - `logs/` — 実行ログ
+
+test
