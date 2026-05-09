@@ -7,11 +7,13 @@ context: |
   中足靭帯、臍下丹田、中丹田、八つの心得、膝ぐにゃ、足裏球体、
   スネO脚、O脚、ヒップヒンジ、鼠径部一の型、陰練、アイソレ、体癖、
   肘締めコンパス、ボディヒアリング、体癖ダンス、ボディボイス、
-  閉じ蹲踞、開き蹲踞、中蹲踞、ローアクセル、ハイアクセル、
-  キネティックチェーン、ゴリラウォーク、クモストレッチ、
-  うさぎ跳びウォーク、ビーストウォーク、トリウォーク、
-  朝活、おパイセン、ジジイメソッド、骨盤運動、肩のアイソレーション、
-  腰のアイソレーション、コツを掴む。
+  閉じ蹲踞、開き蹲踞、中蹲踞、蹲踞面、ローアクセル、ハイアクセル、
+  キネティックチェーン、ゴリラウォーク、クモストレッチ、カマキリストレッチ、
+  動的ストレッチ、皇帝ペンギンウォーク、ビーストウォーク、トリウォーク、
+  うさぎ跳びウォーク、イモムシウォーク、朝活、おパイセン、ジジイメソッド、
+  骨盤運動、肩のアイソレーション、腰のアイソレーション、コツを掴む、
+  仮骨、内反小趾、外反母趾、自己解釈、ムエタイ、介護、言語束縛、
+  没入、アラインメント。
 
 # 2. 後処理での置換ルール（誤認識パターン → 正しい表記）
 #    type: literal は単純置換、regex は正規表現
@@ -39,8 +41,10 @@ substitutions:
   - {pattern: "体液なんです", replacement: "体癖なんです", type: literal}
   - {pattern: "それが体液", replacement: "それが体癖", type: literal}
   - {pattern: "体液", replacement: "体癖", type: regex}
-  
-  # その他、出力を見て気になったもの
+  - {pattern: "鎌切りストレッチ", replacement: "カマキリストレッチ", type: literal}
+  - {pattern: "鎌切り", replacement: "カマキリ", type: literal}
+  - {pattern: "中足忍耐", replacement: "中足靭帯", type: literal}
+  - {pattern: "中足全体", replacement: "中足靭帯", type: literal}
   - {pattern: "内反照子", replacement: "内反小趾", type: literal}
   - {pattern: "下骨", replacement: "仮骨", type: literal}
   - {pattern: "HIGH AXEL", replacement: "ハイアクセル", type: literal}
@@ -48,6 +52,23 @@ substitutions:
   - {pattern: "ハイアクセル", replacement: "ハイアクセル", type: literal}  # 念のため統一
   - {pattern: "バイシャツ", replacement: "自己解釈", type: literal}
   - {pattern: "ひもむしウォーク", replacement: "イモムシウォーク", type: literal}
+  - {pattern: "肯定ペンギン", replacement: "皇帝ペンギン", type: literal}
+  - {pattern: "後手ペンギン", replacement: "皇帝ペンギン", type: literal}
+  - {pattern: "後手ペンギングウォーク", replacement: "皇帝ペンギンウォーク", type: literal}
+  - {pattern: "ポーテンペイビングウォーク", replacement: "皇帝ペンギンウォーク", type: literal}
+  - {pattern: "内反小腰", replacement: "内反小趾", type: literal}
+  - {pattern: "外反腰", replacement: "外反母趾", type: literal}
+  - {pattern: "ソンピョメント", replacement: "蹲踞面", type: literal}
+  - {pattern: "即興面", replacement: "蹲踞面", type: literal}
+  - {pattern: "ゴーテックストレッチ", replacement: "動的ストレッチ", type: literal}
+  - {pattern: "言語速報", replacement: "言語束縛", type: literal}
+  - {pattern: "アラインベッド", replacement: "アラインメント", type: literal}
+  - {pattern: "ボツリング", replacement: "没入", type: literal}
+  - {pattern: "時計棒", replacement: "鼠径部", type: literal}
+  - {pattern: "そけい棒", replacement: "鼠径部", type: literal}
+  - {pattern: "ビーストモーク", replacement: "ビーストウォーク", type: literal}
+  - {pattern: "鎌切りストレッチ", replacement: "カマキリストレッチ", type: literal}
+  - {pattern: "鎌切り", replacement: "カマキリ", type: literal}
 
 # 3. 重要語リスト（信頼度判定の参考に使用）
 important_terms:
@@ -82,3 +103,7 @@ important_terms:
   - 朝活
   - おパイセン
   - ボディボイス
+  - 皇帝ペンギンウォーク
+  - 蹲踞面
+  - 動的ストレッチ
+  - カマキリストレッチ
