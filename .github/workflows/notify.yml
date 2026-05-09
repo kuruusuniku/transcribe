@@ -1,0 +1,28 @@
+name: Notify Progress Automation
+
+on:
+  push:
+    branches: ['**']
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send repository_dispatch to progress-automation
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.AUTOMATION_REPO_TOKEN }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'wkmas',
+              repo: 'progress-automation',
+              event_type: 'commit_pushed',
+              client_payload: {
+                repo_url: `https://github.com/${context.repo.owner}/${context.repo.repo}`,
+                commit_sha: context.sha,
+                commit_message: context.payload.head_commit.message,
+                author: context.payload.head_commit.author.name,
+                timestamp: context.payload.head_commit.timestamp,
+                branch: context.ref.replace('refs/heads/', '')
+              }
+            });
