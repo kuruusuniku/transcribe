@@ -50,3 +50,6 @@ urls.txt
 
 # 個人の設定ファイル（テンプレートのみコミット）
 config.yaml
+
+# Claude Code のローカル設定
+.claude/settings.local.json
