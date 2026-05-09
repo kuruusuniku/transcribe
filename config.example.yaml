@@ -16,7 +16,17 @@ youtube:
   cookies_from_browser: firefox
 
 audio_separation:
-  # ボーカル分離（BGM除去）。精度↑だが時間↑
+  # ボーカル分離（BGM除去）
+  #
+  # 【検証結果】このプロジェクトの稽古指導動画では
+  # Demucs を有効化すると逆に精度が低下することが判明（2026-05-10）。
+  # ボーカル分離が人声の微細な音響特徴を削るため、Whisper の認識精度に
+  # 悪影響が出る。BGM が小さい動画では基本的に false を推奨。
+  #
+  # BGM が大きい動画(音楽が主、人声が背景)では効果がある可能性あり。
+  # 必要に応じて切り替えて使用すること。
+  #
+  # 1時間動画での処理時間追加: 約50分(VRAM 4GB環境)
   enabled: false
   model: htdemucs
   device: cuda
