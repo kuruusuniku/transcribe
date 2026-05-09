@@ -6,6 +6,8 @@ import traceback
 from datetime import date
 from pathlib import Path
 
+import yt_dlp.utils
+
 from .config import AppConfig, GlossaryConfig
 from .postprocess import compress_repetitions, postprocess
 from .stages.downloader import download_audio
@@ -22,6 +24,30 @@ from .state import (
 from .utils import ensure_dir
 
 logger = logging.getLogger(__name__)
+
+NON_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    ModuleNotFoundError,
+    ImportError,
+    yt_dlp.utils.UnsupportedError,
+    FileNotFoundError,
+    KeyError,
+    AttributeError,
+    TypeError,
+)
+
+NON_RETRYABLE_MESSAGE_PATTERNS: tuple[str, ...] = (
+    "Couldn't find appropriate backend",
+    "CUDA out of memory",
+    "No such file or directory",
+    "Permission denied",
+)
+
+
+def is_non_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, NON_RETRYABLE_EXCEPTIONS):
+        return True
+    msg = str(exc)
+    return any(p in msg for p in NON_RETRYABLE_MESSAGE_PATTERNS)
 
 
 def _output_dir_for(output_root: Path, upload_date: str | None, video_id: str) -> Path:
@@ -70,6 +96,7 @@ def run_pipeline(
         logger.info(f"[job {job_id}] 開始: {url}")
 
         success = False
+        non_retryable_hit = False
         for attempt in range(max_attempts):
             if attempt > 0:
                 wait = cfg.retry.backoff_seconds[min(attempt - 1, len(cfg.retry.backoff_seconds) - 1)]
@@ -84,10 +111,17 @@ def run_pipeline(
             except Exception as e:
                 err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
                 logger.error(f"[job {job_id}] 失敗 (attempt {attempt + 1}/{max_attempts}):\n{err_msg}")
-                if attempt + 1 >= max_attempts:
+                if is_non_retryable(e):
+                    logger.error(f"[job {job_id}] リトライ不可能なエラーを検出: {type(e).__name__}")
+                    logger.error(f"[job {job_id}] エラー内容: {e}")
+                    logger.error(f"[job {job_id}] このエラーはリトライしても解決しないため、即時 failed として記録します")
+                    record_error(db, job_id, err_msg)
+                    non_retryable_hit = True
+                    break
+                elif attempt + 1 >= max_attempts:
                     record_error(db, job_id, err_msg)
 
-        if not success:
+        if not success and not non_retryable_hit:
             logger.error(f"[job {job_id}] 最大リトライ回数到達。スキップします。")
 
         if progress is not None and task_id is not None:
