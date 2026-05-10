@@ -192,4 +192,4 @@ uv run transcribe clean
 - `data/state.db` — ジョブ管理DB
 - `logs/` — 実行ログ
 
-gemini test
+gemini test2
