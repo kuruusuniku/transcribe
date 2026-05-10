@@ -69,6 +69,38 @@ substitutions:
   - {pattern: "ビーストモーク", replacement: "ビーストウォーク", type: literal}
   - {pattern: "鎌切りストレッチ", replacement: "カマキリストレッチ", type: literal}
   - {pattern: "鎌切り", replacement: "カマキリ", type: literal}
+  - {pattern: "若マス", replacement: "若松", type: literal}
+  - {pattern: "損去面", replacement: "蹲踞面", type: literal}
+  - {pattern: "尊鏡面", replacement: "蹲踞面", type: literal}
+  - {pattern: "中足忍体", replacement: "中足靭帯", type: literal}
+  - {pattern: "中毒人体", replacement: "中足靱帯", type: literal}
+  - {pattern: "コーテーペンギン", replacement: "皇帝ペンギン", type: literal}
+  - {pattern: "ベストフォーク", replacement: "ビーストウォーク", type: literal}
+  - {pattern: "ウエスト", replacement: "ビースト", type: literal}
+  - {pattern: "トリウムウォーク", replacement: "トリウォーク", type: literal}
+  - {pattern: "ツルオーク", replacement: "ツルウォーク", type: literal}
+  - {pattern: "ヒットウォーク", replacement: "キリンウォーク", type: literal}
+  - {pattern: "アニマルスロー", replacement: "アニマルフロー", type: literal}
+  - {pattern: "腐臭", replacement: "復習", type: literal}
+  - {pattern: "スネルヴ", replacement: "スネデブ", type: literal}
+  - {pattern: "スネディング", replacement: "スネデブ", type: literal}
+  - {pattern: "スネ横脚", replacement: "スネO脚", type: literal}
+  - {pattern: "シュハリ", replacement: "守破離", type: literal}
+  - {pattern: "横脚", replacement: "O脚", type: literal}
+  - {pattern: "肥骨", replacement: "腓骨", type: literal}
+  - {pattern: "頭骨", replacement: "橈骨", type: literal}
+  - {pattern: "側球", replacement: "足弓", type: literal}
+  - {pattern: "足球", replacement: "足弓", type: literal}
+  - {pattern: "買えない買えない", replacement: "回内回外", type: literal}
+  - {pattern: "果汁", replacement: "荷重", type: literal}
+  - {pattern: "脱力微動力", replacement: "脱力美努力", type: literal}
+  - {pattern: "エッジ", replacement: "叡智", type: literal}
+  - {pattern: "人事課", replacement: "自因自果", type: literal}
+  - {pattern: "答え", replacement: "交代", type: literal}
+  - {pattern: "雲", replacement: "蜘蛛", type: literal}
+  - {pattern: "苦悩", replacement: "蜘蛛", type: literal}
+  - {pattern: "OKです、答え", replacement: "OKです、交代", type: literal}
+  - {pattern: "OKです 答え", replacement: "OKです 交代", type: literal} 
 
 # 3. 重要語リスト（信頼度判定の参考に使用）
 important_terms:
@@ -107,3 +139,16 @@ important_terms:
   - 蹲踞面
   - 動的ストレッチ
   - カマキリストレッチ
+  - スネデブ
+  - ツルウォーク
+  - キリンウォーク
+  - ワニウォーク
+  - アニマルフロー
+  - 腓骨
+  - 橈骨
+  - 回内回外
+  - 叡智
+  - 自因自果
+  - 脱力美努力
+  - 守破離
+  - 若マス
