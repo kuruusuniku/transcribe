@@ -101,6 +101,22 @@ substitutions:
   - {pattern: "苦悩", replacement: "蜘蛛", type: literal}
   - {pattern: "OKです、答え", replacement: "OKです、交代", type: literal}
   - {pattern: "OKです 答え", replacement: "OKです 交代", type: literal} 
+  - {pattern: "中尊挙", replacement: "中蹲踞", type: literal}
+  - {pattern: "時計部", replacement: "鼠径部", type: literal}
+  - {pattern: "処刑部", replacement: "鼠径部", type: literal}
+  - {pattern: "固定ペンギンフォーク", replacement: "皇帝ペンギンウォーク", type: literal}
+  - {pattern: "内反射手", replacement: "内反小趾", type: literal}
+  - {pattern: "カナケイストレッチ", replacement: "カマキリストレッチ", type: literal}
+  - {pattern: "アニマーショー", replacement: "アニマルフロー", type: literal}
+  - {pattern: "スネレム", replacement: "スネデブ", type: literal}
+  - {pattern: "足レム", replacement: "足デブ", type: literal}
+  - {pattern: "自陣迷走区", replacement: "ジジイメソッド", type: literal}
+  - {pattern: "脇突然拠筋", replacement: "脇と前鋸筋", type: literal}
+  - {pattern: "肩骨骨", replacement: "肩甲骨", type: literal}
+  - {pattern: "肩んで", replacement: "下丹田", type: literal}
+  - {pattern: "唾液ダンス", replacement: "体癖ダンス", type: literal}
+  - {pattern: "思考合図", replacement: "知行合一", type: literal}
+  - {pattern: "サンデートリズム", replacement: "三点倒立", type: literal}
 
 # 3. 重要語リスト（信頼度判定の参考に使用）
 important_terms:
@@ -152,3 +168,11 @@ important_terms:
   - 脱力美努力
   - 守破離
   - 若マス
+  - 下丹田
+  - 前鋸筋
+  - 肩甲骨
+  - 知行合一
+  - 三点倒立
+  - 体癖ダンス
+  - 仙骨
+  - 足デブ
