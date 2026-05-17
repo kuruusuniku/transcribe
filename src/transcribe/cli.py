@@ -24,7 +24,7 @@ from .state import (
 )
 from .utils import ensure_dir
 
-app = typer.Typer(name="transcribe", add_completion=False, help="YouTube動画 自動文字起こしツール")
+app = typer.Typer(name="transcribe", add_completion=False, help="YouTube動画・ローカル音声ファイル 自動文字起こしツール")
 console = Console()
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -44,11 +44,21 @@ def _load_cfg_and_glossary():
     return cfg, glossary
 
 
+def _validate_local_path(path_str: str) -> str:
+    """ローカルファイルパスのバリデーション。絶対パスに正規化して返す。"""
+    p = Path(path_str).resolve()
+    if not p.exists():
+        raise FileNotFoundError(f"ファイルが見つかりません: {path_str}")
+    if p.suffix.lower() != ".mp3":
+        raise ValueError(f"現在 MP3 のみ対応しています（将来他形式にも対応予定）: {p.suffix}")
+    return str(p)
+
+
 @app.command()
 def run(
     urls_file: Path = typer.Option(_URLS_PATH, "--urls", "-u", help="URLリストファイル"),
 ) -> None:
-    """urls.txt を読んで未処理ジョブを文字起こしする"""
+    """urls.txt を読んで未処理ジョブを文字起こしする（URLとローカルファイルパスの混在可）"""
     cfg, glossary = _load_cfg_and_glossary()
     logger = logging.getLogger(__name__)
 
@@ -57,18 +67,33 @@ def run(
         raise typer.Exit(0)
 
     lines = urls_file.read_text(encoding="utf-8").splitlines()
-    urls = [
+    raw_entries = [
         line.strip()
         for line in lines
         if line.strip() and not line.strip().startswith("#")
     ]
 
-    if not urls:
-        logger.info("処理対象URLなし")
-        console.print("[yellow]urls.txt にURLが登録されていません。[/yellow]")
+    if not raw_entries:
+        logger.info("処理対象なし")
+        console.print("[yellow]urls.txt にURLまたはファイルパスが登録されていません。[/yellow]")
         raise typer.Exit(0)
 
-    console.print(f"[green]{len(urls)} 件のURLを処理します[/green]")
+    entries: list[str] = []
+    for entry in raw_entries:
+        if entry.startswith(("http://", "https://")):
+            entries.append(entry)
+        else:
+            try:
+                entries.append(_validate_local_path(entry))
+            except (FileNotFoundError, ValueError) as e:
+                console.print(f"[red]{e}[/red]")
+                logger.error(str(e))
+
+    if not entries:
+        console.print("[yellow]有効な処理対象がありません。[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(f"[green]{len(entries)} 件を処理します[/green]")
 
     with Progress(
         SpinnerColumn(),
@@ -78,7 +103,36 @@ def run(
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        run_pipeline(urls, cfg, glossary, progress=progress)
+        run_pipeline(entries, cfg, glossary, progress=progress)
+
+
+@app.command()
+def file(
+    path: Path = typer.Argument(..., help="MP3ファイルパス"),
+) -> None:
+    """ローカル MP3 ファイルを文字起こしする"""
+    cfg, glossary = _load_cfg_and_glossary()
+
+    resolved = Path(path).resolve()
+    if not resolved.exists():
+        console.print(f"[red]ファイルが見つかりません: {path}[/red]")
+        raise typer.Exit(1)
+    if resolved.suffix.lower() != ".mp3":
+        console.print(f"[red]現在 MP3 のみ対応しています（将来他形式にも対応予定）: {resolved.suffix}[/red]")
+        raise typer.Exit(1)
+
+    abs_path = str(resolved)
+    console.print(f"[green]ファイルを処理します: {resolved.name}[/green]")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        run_pipeline([abs_path], cfg, glossary, progress=progress)
 
 
 @app.command()
@@ -162,6 +216,14 @@ def rerun(
         )
         run_pipeline([url_or_id], cfg, glossary)
         return
+
+    source_type = job["source_type"] if "source_type" in job.keys() else "youtube"
+    if source_type == "local" and not Path(job["url"]).exists():
+        console.print(
+            f"[yellow]WARNING: ソースファイルが見つかりません: {job['url']}（スキップ）[/yellow]"
+        )
+        logging.getLogger(__name__).warning(f"Source file not found: {job['url']}, skipping job {job['id']}")
+        raise typer.Exit(0)
 
     output_dir = Path(job["output_dir"]) if job["output_dir"] else None
     dir_exists = output_dir is not None and output_dir.exists()

@@ -24,6 +24,7 @@ def format_outputs(
     audio_separation_enabled: bool,
     cfg: AppConfig,
     output_dir: Path,
+    source_type: str = "youtube",
 ) -> int:
     """Markdown と JSON を output_dir に書き出す。処理セグメント数を返す。"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,7 @@ def format_outputs(
         cfg=cfg,
         low_conf_count=low_conf_count,
         output_dir=output_dir,
+        source_type=source_type,
     )
 
     _write_segments_json(
@@ -59,6 +61,7 @@ def format_outputs(
         audio_separation_enabled=audio_separation_enabled,
         cfg=cfg,
         output_dir=output_dir,
+        source_type=source_type,
     )
 
     _write_meta_json(
@@ -72,6 +75,7 @@ def format_outputs(
         low_conf_count=low_conf_count,
         segment_count=len(seg_list),
         output_dir=output_dir,
+        source_type=source_type,
     )
 
     logger.info(f"出力完了: {output_dir}")
@@ -99,17 +103,25 @@ def _write_markdown(
     cfg: AppConfig,
     low_conf_count: int,
     output_dir: Path,
+    source_type: str = "youtube",
 ) -> None:
     interval = cfg.output.timestamp_interval_seconds
     sep_label = "有効" if audio_separation_enabled else "無効"
+    is_local = source_type == "local"
+
+    source_label = "ファイル" if is_local else "動画"
+    date_label = "文字起こし日" if is_local else f"{recording_date}（YouTube公開日）"
 
     lines: list[str] = [
         f"# {title}",
         "",
         "| | |",
         "|---|---|",
-        f"| 動画 | {url} |",
-        f"| 録画日 | {recording_date}（YouTube公開日） |",
+        f"| {source_label} | {url} |",
+    ]
+    if not is_local:
+        lines.append(f"| 録画日 | {recording_date}（YouTube公開日） |")
+    lines.extend([
         f"| 文字起こし日 | {transcribed_at} |",
         f"| 音声分離 | {sep_label} |",
         f"| モデル | faster-whisper {cfg.transcription.model} ({cfg.transcription.compute_type}) |",
@@ -117,9 +129,8 @@ def _write_markdown(
         "",
         "---",
         "",
-    ]
+    ])
 
-    # セグメントを1分ごとのバケットに振り分ける
     buckets: dict[int, list[ProcessedSegment]] = {}
     for seg in segments:
         bucket_key = int(seg.start // interval) * interval
@@ -127,13 +138,15 @@ def _write_markdown(
 
     for bucket_start in sorted(buckets.keys()):
         ts_label = format_timestamp(bucket_start)
-        ts_link = youtube_url_with_timestamp(video_id, bucket_start)
-        lines.append(f"## [{ts_label}]({ts_link})")
+        if is_local:
+            lines.append(f"## {ts_label}")
+        else:
+            ts_link = youtube_url_with_timestamp(video_id, bucket_start)
+            lines.append(f"## [{ts_label}]({ts_link})")
         lines.append("")
 
         for seg in buckets[bucket_start]:
             if seg.original_text is not None:
-                # 重複圧縮済みセグメント — マーカーをそのまま表示
                 lines.append(seg.text)
             elif seg.low_confidence:
                 lines.append(f"⚠️[要確認: 低信頼] {seg.text}")
@@ -158,9 +171,27 @@ def _write_segments_json(
     audio_separation_enabled: bool,
     cfg: AppConfig,
     output_dir: Path,
+    source_type: str = "youtube",
 ) -> None:
+    is_local = source_type == "local"
+
+    def _seg_dict(seg: ProcessedSegment) -> dict:
+        d: dict = {
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text,
+            **({"original_text": seg.original_text} if seg.original_text is not None else {}),
+            "avg_logprob": seg.avg_logprob,
+            "no_speech_prob": seg.no_speech_prob,
+            "low_confidence": seg.low_confidence,
+        }
+        if not is_local:
+            d["youtube_link"] = youtube_url_with_timestamp(video_id, seg.start)
+        return d
+
     data = {
         "video_id": video_id,
+        "source_type": source_type,
         "url": url,
         "title": title,
         "transcribed_at": transcribed_at,
@@ -168,20 +199,11 @@ def _write_segments_json(
             "model": cfg.transcription.model,
             "audio_separation": audio_separation_enabled,
         },
-        "segments": [
-            {
-                "start": seg.start,
-                "end": seg.end,
-                "text": seg.text,
-                **({"original_text": seg.original_text} if seg.original_text is not None else {}),
-                "avg_logprob": seg.avg_logprob,
-                "no_speech_prob": seg.no_speech_prob,
-                "low_confidence": seg.low_confidence,
-                "youtube_link": youtube_url_with_timestamp(video_id, seg.start),
-            }
-            for seg in segments
-        ],
+        "segments": [_seg_dict(seg) for seg in segments],
     }
+    if is_local:
+        data["source_path"] = url
+
     out_path = output_dir / "segments.json"
     out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.debug(f"segments.json 書き出し: {out_path}")
@@ -198,9 +220,11 @@ def _write_meta_json(
     low_conf_count: int,
     segment_count: int,
     output_dir: Path,
+    source_type: str = "youtube",
 ) -> None:
-    data = {
+    data: dict = {
         "video_id": video_id,
+        "source_type": source_type,
         "url": url,
         "title": title,
         "recording_date": recording_date,
@@ -219,6 +243,10 @@ def _write_meta_json(
             "confidence_threshold": cfg.output.confidence_threshold,
         },
     }
+    if source_type == "local":
+        data["source_path"] = url
+        data["filename"] = Path(url).name
+
     out_path = output_dir / "meta.json"
     out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.debug(f"meta.json 書き出し: {out_path}")

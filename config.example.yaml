@@ -54,6 +54,14 @@ output:
   timestamp_interval_seconds: 60
   confidence_threshold: -1.0
 
+# ローカルファイル対応
+# urls.txt にファイルパスを記載するか、`transcribe file <path>` で直接指定可能
+# 現在 MP3 のみ対応。URL とローカルパスの混在が可能。
+# 例:
+#   https://www.youtube.com/watch?v=abc123
+#   C:\Users\sttmn\recordings\keiko.mp3
+#   ./data/audio/session.mp3
+
 retry:
   max_attempts: 3
   backoff_seconds: [60, 300, 900]

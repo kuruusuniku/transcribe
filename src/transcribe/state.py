@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     video_id        TEXT,
     title           TEXT,
     status          TEXT NOT NULL,
+    source_type     TEXT NOT NULL DEFAULT 'youtube',
     retry_count     INTEGER DEFAULT 0,
     error_message   TEXT,
     output_dir      TEXT,
@@ -43,19 +44,27 @@ def _connect(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
         conn.close()
 
 
+def _migrate_source_type(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "source_type" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN source_type TEXT NOT NULL DEFAULT 'youtube'")
+        logger.info("マイグレーション: source_type カラムを追加しました")
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        _migrate_source_type(conn)
     logger.debug(f"SQLite 初期化完了: {db_path}")
 
 
-def upsert_job(db_path: Path, url: str) -> int:
+def upsert_job(db_path: Path, url: str, *, source_type: str = "youtube") -> int:
     """URLを登録。既存なら何もしない。job id を返す。"""
     with _connect(db_path) as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO jobs (url, status) VALUES (?, 'queued')",
-            (url,),
+            "INSERT OR IGNORE INTO jobs (url, status, source_type) VALUES (?, 'queued', ?)",
+            (url, source_type),
         )
         row = conn.execute("SELECT id FROM jobs WHERE url = ?", (url,)).fetchone()
     return row["id"]

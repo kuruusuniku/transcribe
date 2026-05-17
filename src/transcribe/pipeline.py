@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import time
 import traceback
 from datetime import date
@@ -30,6 +31,7 @@ NON_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     ImportError,
     yt_dlp.utils.UnsupportedError,
     FileNotFoundError,
+    PermissionError,
     KeyError,
     AttributeError,
     TypeError,
@@ -50,12 +52,26 @@ def is_non_retryable(exc: BaseException) -> bool:
     return any(p in msg for p in NON_RETRYABLE_MESSAGE_PATTERNS)
 
 
+def is_local_source(url_or_path: str) -> bool:
+    return not url_or_path.startswith(("http://", "https://"))
+
+
 def _output_dir_for(output_root: Path, upload_date: str | None, video_id: str) -> Path:
     if upload_date and len(upload_date) == 8:
         date_str = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}"
     else:
         date_str = str(date.today())
     return output_root / f"{date_str}_{video_id}"
+
+
+def _copy_local_file(source_path: str, work_dir: Path) -> Path:
+    src = Path(source_path)
+    if not src.exists():
+        raise FileNotFoundError(f"ソースファイルが見つかりません: {source_path}")
+    dest = work_dir / src.name
+    shutil.copy2(src, dest)
+    logger.info(f"ローカルファイルをコピー: {src.name} → {dest}")
+    return dest
 
 
 def run_pipeline(
@@ -69,9 +85,9 @@ def run_pipeline(
     work_dir = ensure_dir(cfg.work_dir)
     output_dir = ensure_dir(cfg.output_dir)
 
-    # URL を DB に登録
     for url in urls:
-        upsert_job(db, url)
+        source_type = "local" if is_local_source(url) else "youtube"
+        upsert_job(db, url, source_type=source_type)
 
     pending = get_pending_jobs(db)
     if not pending:
@@ -93,7 +109,8 @@ def run_pipeline(
         retry_count: int = job["retry_count"]
         max_attempts = cfg.retry.max_attempts
 
-        logger.info(f"[job {job_id}] 開始: {url}")
+        source_type: str = job["source_type"] if "source_type" in job.keys() else "youtube"
+        logger.info(f"[job {job_id}] 開始: {url} (source_type={source_type})")
 
         success = False
         non_retryable_hit = False
@@ -105,7 +122,7 @@ def run_pipeline(
                 reset_for_retry(db, job_id)
 
             try:
-                _run_job(job_id, url, db, work_dir, output_dir, cfg, glossary, model_cache)
+                _run_job(job_id, url, source_type, db, work_dir, output_dir, cfg, glossary, model_cache)
                 success = True
                 break
             except Exception as e:
@@ -135,6 +152,7 @@ def run_pipeline(
 def _run_job(
     job_id: int,
     url: str,
+    source_type: str,
     db: Path,
     work_dir: Path,
     output_root: Path,
@@ -142,14 +160,29 @@ def _run_job(
     glossary: GlossaryConfig,
     model_cache: dict,
 ) -> None:
-    # 1. ダウンロード
-    update_status(db, job_id, "downloading")
-    dl_result = download_audio(url, work_dir, cfg)
-    update_status(db, job_id, "downloading", video_id=dl_result.video_id, title=dl_result.title)
+    if source_type == "local":
+        # ローカルファイル: ダウンロードスキップ、work_dir にコピー
+        update_status(db, job_id, "downloading")
+        src_path = Path(url)
+        video_id = src_path.stem
+        title = src_path.name
+        audio_path = _copy_local_file(url, work_dir)
+        upload_date = None
+        update_status(db, job_id, "downloading", video_id=video_id, title=title)
+    else:
+        # YouTube: 既存の yt-dlp ダウンロード処理
+        update_status(db, job_id, "downloading")
+        dl_result = download_audio(url, work_dir, cfg)
+        video_id = dl_result.video_id
+        title = dl_result.title
+        audio_path = dl_result.audio_path
+        upload_date = dl_result.upload_date
+        update_status(db, job_id, "downloading", video_id=video_id, title=title)
 
     # 2. 音声分離（オプション）
     update_status(db, job_id, "separating")
-    audio_path = separate_audio(dl_result.audio_path, work_dir, cfg)
+    original_audio_path = audio_path
+    audio_path = separate_audio(audio_path, work_dir, cfg)
     audio_separation_used = cfg.audio_separation.enabled
 
     # 3→4. 文字起こし + 後処理（ジェネレータチェーン: Whisper出力を逐次後処理）
@@ -160,13 +193,14 @@ def _run_job(
 
     # 5. フォーマット出力（ここでジェネレータを消費し、リスト化・ファイル書き出し）
     update_status(db, job_id, "formatting")
-    job_output_dir = _output_dir_for(output_root, dl_result.upload_date, dl_result.video_id)
+    job_output_dir = _output_dir_for(output_root, upload_date, video_id)
     segment_count = format_outputs(
         segments=compressed_gen,
-        video_id=dl_result.video_id,
+        video_id=video_id,
         url=url,
-        title=dl_result.title,
-        upload_date=dl_result.upload_date,
+        title=title,
+        upload_date=upload_date,
+        source_type=source_type,
         audio_separation_enabled=audio_separation_used,
         cfg=cfg,
         output_dir=job_output_dir,
@@ -177,5 +211,5 @@ def _run_job(
     logger.info(f"[job {job_id}] 完了: {job_output_dir}")
 
     # 一時ファイル掃除（分離済み音声のみ削除、元音声は保持）
-    if audio_separation_used and audio_path != dl_result.audio_path:
+    if audio_separation_used and audio_path != original_audio_path:
         audio_path.unlink(missing_ok=True)
