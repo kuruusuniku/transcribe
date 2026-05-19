@@ -51,11 +51,19 @@ def _migrate_source_type(conn: sqlite3.Connection) -> None:
         logger.info("マイグレーション: source_type カラムを追加しました")
 
 
+def _migrate_synced_at(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "synced_at" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN synced_at TEXT")
+        logger.info("マイグレーション: synced_at カラムを追加しました")
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(SCHEMA)
         _migrate_source_type(conn)
+        _migrate_synced_at(conn)
     logger.debug(f"SQLite 初期化完了: {db_path}")
 
 
@@ -163,6 +171,31 @@ def reset_for_retry(db_path: Path, job_id: int) -> None:
             """UPDATE jobs
                SET status = 'queued',
                    error_message = NULL,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (job_id,),
+        )
+
+
+def get_unsynced_done_jobs(db_path: Path) -> list[sqlite3.Row]:
+    with _connect(db_path) as conn:
+        return conn.execute(
+            "SELECT * FROM jobs WHERE status = 'done' AND synced_at IS NULL ORDER BY id"
+        ).fetchall()
+
+
+def get_all_done_jobs(db_path: Path) -> list[sqlite3.Row]:
+    with _connect(db_path) as conn:
+        return conn.execute(
+            "SELECT * FROM jobs WHERE status = 'done' ORDER BY id"
+        ).fetchall()
+
+
+def record_synced(db_path: Path, job_id: int) -> None:
+    with _connect(db_path) as conn:
+        conn.execute(
+            """UPDATE jobs
+               SET synced_at = CURRENT_TIMESTAMP,
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = ?""",
             (job_id,),

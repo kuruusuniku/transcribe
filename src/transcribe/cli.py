@@ -15,13 +15,17 @@ from . import setup_logging
 from .config import load_config, load_glossary
 from .pipeline import run_pipeline
 from .state import (
+    get_all_done_jobs,
     get_all_jobs,
     get_job_by_id,
     get_job_by_url_or_id,
+    get_unsynced_done_jobs,
     init_db,
+    record_synced,
     reset_for_retry,
     reset_for_rerun,
 )
+from .sync import sync_job
 from .utils import ensure_dir
 
 app = typer.Typer(name="transcribe", add_completion=False, help="YouTube動画・ローカル音声ファイル 自動文字起こしツール")
@@ -261,6 +265,63 @@ def rerun(
     reset_for_rerun(db, job["id"])
     console.print(f"[green]ジョブ {job['id']} ({job['url']}) を再実行します[/green]")
     run_pipeline([job["url"]], cfg, glossary)
+
+
+@app.command()
+def sync(
+    all_jobs: bool = typer.Option(False, "--all", help="done ジョブを全件再同期（synced_at を無視）"),
+) -> None:
+    """未同期の完了済みジョブを Google Docs に同期する"""
+    cfg, _ = _load_cfg_and_glossary()
+    logger = logging.getLogger(__name__)
+
+    if not cfg.google_docs.enabled:
+        console.print(
+            "[yellow]Google Docs 同期が無効です。[/yellow]\n"
+            "config.yaml で google_docs.enabled を true に設定してください。"
+        )
+        raise typer.Exit(0)
+
+    if not cfg.google_docs.root_folder_id:
+        console.print(
+            "[yellow]Google Drive のルートフォルダ ID が未設定です。[/yellow]\n"
+            "config.yaml で google_docs.root_folder_id を設定してください。"
+        )
+        raise typer.Exit(0)
+
+    jobs = get_all_done_jobs(cfg.state_db) if all_jobs else get_unsynced_done_jobs(cfg.state_db)
+
+    if not jobs:
+        console.print("[yellow]同期対象のジョブがありません[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(f"[green]{len(jobs)} 件を同期します[/green]")
+
+    success_count = 0
+    skip_count = 0
+    fail_count = 0
+
+    for job in jobs:
+        job_id = job["id"]
+        output_dir = Path(job["output_dir"]) if job["output_dir"] else None
+        if output_dir is None or not output_dir.exists():
+            logger.warning(f"[job {job_id}] 出力ディレクトリなし、スキップ")
+            skip_count += 1
+            continue
+        try:
+            doc_id = sync_job(dict(job), output_dir, cfg.google_docs)
+            if doc_id:
+                record_synced(cfg.state_db, job_id)
+                console.print(f"  [green]✓[/green] job {job_id}: {job['title'] or job['url']}")
+                success_count += 1
+            else:
+                skip_count += 1
+        except Exception as e:
+            logger.error(f"[job {job_id}] 同期失敗: {e}")
+            console.print(f"  [red]✗[/red] job {job_id}: {e}")
+            fail_count += 1
+
+    console.print(f"\n成功: {success_count}  スキップ: {skip_count}  失敗: {fail_count}")
 
 
 @app.command()

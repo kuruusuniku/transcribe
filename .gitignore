@@ -53,3 +53,6 @@ config.yaml
 
 # Claude Code のローカル設定
 .claude/settings.local.json
+
+# 初回認証後に自動生成されるアクセストークン
+token.json

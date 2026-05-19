@@ -18,10 +18,12 @@ from .stages.transcriber import transcribe
 from .state import (
     get_pending_jobs,
     record_error,
+    record_synced,
     reset_for_retry,
     update_status,
     upsert_job,
 )
+from .sync import sync_job
 from .utils import ensure_dir
 
 logger = logging.getLogger(__name__)
@@ -209,6 +211,17 @@ def _run_job(
 
     update_status(db, job_id, "done", output_dir=str(job_output_dir))
     logger.info(f"[job {job_id}] 完了: {job_output_dir}")
+
+    # Google Docs 自動同期
+    if cfg.google_docs.enabled and cfg.google_docs.root_folder_id:
+        try:
+            job_dict = {"source_type": source_type}
+            doc_id = sync_job(job_dict, job_output_dir, cfg.google_docs)
+            if doc_id:
+                record_synced(db, job_id)
+                logger.info(f"[job {job_id}] Google Docs に同期完了")
+        except Exception as e:
+            logger.warning(f"[job {job_id}] Google Docs 同期失敗（文字起こしは完了済み）: {e}")
 
     # 一時ファイル掃除（分離済み音声のみ削除、元音声は保持）
     if audio_separation_used and audio_path != original_audio_path:

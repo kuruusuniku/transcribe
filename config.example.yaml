@@ -70,3 +70,9 @@ logging:
   level: INFO
   console: true
   file: true
+
+google_docs:
+  enabled: false                    # true にすると パイプライン完了時に自動同期
+  credentials_path: credentials.json
+  token_path: token.json            # 自動生成（gitignore 対象）
+  root_folder_id: ""                # Google Drive のルートフォルダ ID

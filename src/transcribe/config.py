@@ -70,6 +70,14 @@ class LoggingConfig:
 
 
 @dataclass
+class GoogleDocsConfig:
+    enabled: bool = False
+    credentials_path: Path = field(default_factory=lambda: Path("credentials.json"))
+    token_path: Path = field(default_factory=lambda: Path("token.json"))
+    root_folder_id: str = ""
+
+
+@dataclass
 class AppConfig:
     paths: PathsConfig
     youtube: YoutubeConfig
@@ -78,6 +86,7 @@ class AppConfig:
     output: OutputConfig
     retry: RetryConfig
     logging: LoggingConfig
+    google_docs: GoogleDocsConfig = field(default_factory=GoogleDocsConfig)
 
     @property
     def work_dir(self) -> Path:
@@ -169,6 +178,14 @@ def load_config(config_path: Path) -> AppConfig:
         file=log_raw.get("file", True),
     )
 
+    gd_raw = raw.get("google_docs", {})
+    google_docs = GoogleDocsConfig(
+        enabled=gd_raw.get("enabled", False),
+        credentials_path=_resolve_path(gd_raw.get("credentials_path", "credentials.json"), base),
+        token_path=_resolve_path(gd_raw.get("token_path", "token.json"), base),
+        root_folder_id=gd_raw.get("root_folder_id", ""),
+    )
+
     return AppConfig(
         paths=paths,
         youtube=youtube,
@@ -177,6 +194,7 @@ def load_config(config_path: Path) -> AppConfig:
         output=output,
         retry=retry,
         logging=log_cfg,
+        google_docs=google_docs,
     )
 
 
