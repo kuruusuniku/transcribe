@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from .config import SummarizeConfig
 
 logger = logging.getLogger(__name__)
+
+
+_GEMINI_503_RETRY_BACKOFFS_SEC = (5, 15, 30)
 
 
 SYSTEM_PROMPT_BASE = """\
@@ -157,7 +161,11 @@ def call_gemini(
     user_message: str,
     cfg: SummarizeConfig,
 ) -> str:
-    """Gemini API を呼び出し、まとめテキストを返す。"""
+    """Gemini API を呼び出し、まとめテキストを返す。
+
+    503 Service Unavailable は最大 3 回までリトライする
+    （バックオフ: 5 秒 → 15 秒 → 30 秒）。それ以外のエラーは即座に伝播する。
+    """
     from google import genai
     from google.genai import types as genai_types
 
@@ -169,16 +177,31 @@ def call_gemini(
         )
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=cfg.gemini_model,
-        contents=user_message,
-        config=genai_types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            max_output_tokens=cfg.max_output_tokens,
-            temperature=cfg.temperature,
-        ),
-    )
-    return response.text or ""
+
+    max_retries = len(_GEMINI_503_RETRY_BACKOFFS_SEC)
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=cfg.gemini_model,
+                contents=user_message,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=cfg.max_output_tokens,
+                    temperature=cfg.temperature,
+                ),
+            )
+            return response.text or ""
+        except Exception as e:
+            if getattr(e, "code", None) != 503 or attempt >= max_retries:
+                raise
+            wait = _GEMINI_503_RETRY_BACKOFFS_SEC[attempt]
+            logger.warning(
+                f"Gemini API が 503 を返したためリトライします "
+                f"({attempt + 1}/{max_retries} 回目、{wait} 秒待機)"
+            )
+            time.sleep(wait)
+
+    raise RuntimeError("到達不能: 503 リトライループが想定外に終了しました")
 
 
 def call_claude(

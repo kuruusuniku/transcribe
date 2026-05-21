@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -174,6 +175,140 @@ def test_call_gemini_empty_response():
     with patch.dict(sys.modules, modules):
         result = call_gemini("sys", "user", cfg)
     assert result == ""
+
+
+# ─── call_gemini 503 リトライ ─────────────────────────────────────────────
+
+
+def _make_genai_error(code: int):
+    """指定 HTTP ステータスコードを持つ google.genai APIError を構築する。"""
+    from google.genai import errors as genai_errors
+
+    payload = {"error": {"code": code, "status": "ERR", "message": f"{code} error"}}
+    if 400 <= code < 500:
+        return genai_errors.ClientError(code, payload)
+    return genai_errors.ServerError(code, payload)
+
+
+def _install_fake_genai_with_side_effect(side_effect):
+    """generate_content の side_effect を任意指定できる版。"""
+    fake_client = MagicMock()
+    fake_client.models.generate_content.side_effect = side_effect
+
+    fake_genai = MagicMock()
+    fake_genai.Client.return_value = fake_client
+
+    fake_types = MagicMock()
+    fake_genai.types = fake_types
+
+    fake_google = MagicMock()
+    fake_google.genai = fake_genai
+
+    modules = {
+        "google": fake_google,
+        "google.genai": fake_genai,
+        "google.genai.types": fake_types,
+    }
+    return modules, fake_client
+
+
+def test_call_gemini_503_retries_then_succeeds():
+    """503 が 1 回 → リトライして成功。"""
+    cfg = SummarizeConfig(provider="gemini", gemini_api_key="key123")
+
+    fake_response = MagicMock()
+    fake_response.text = "OK_AFTER_RETRY"
+
+    err = _make_genai_error(503)
+    modules, fake_client = _install_fake_genai_with_side_effect([err, fake_response])
+
+    with patch.dict(sys.modules, modules):
+        with patch("transcribe.summarize.time.sleep") as mock_sleep:
+            result = call_gemini("sys", "user", cfg)
+
+    assert result == "OK_AFTER_RETRY"
+    assert fake_client.models.generate_content.call_count == 2
+    mock_sleep.assert_called_once_with(5)
+
+
+def test_call_gemini_503_max_retries_raises():
+    """503 が連続発生し最大リトライ回数を超えると元の例外を raise する。"""
+    cfg = SummarizeConfig(provider="gemini", gemini_api_key="key123")
+
+    err = _make_genai_error(503)
+    modules, fake_client = _install_fake_genai_with_side_effect(err)
+
+    with patch.dict(sys.modules, modules):
+        with patch("transcribe.summarize.time.sleep") as mock_sleep:
+            with pytest.raises(Exception) as exc_info:
+                call_gemini("sys", "user", cfg)
+
+    assert getattr(exc_info.value, "code", None) == 503
+    # 初回 + 3 リトライ = 4 回
+    assert fake_client.models.generate_content.call_count == 4
+    assert mock_sleep.call_count == 3
+    assert [c.args[0] for c in mock_sleep.call_args_list] == [5, 15, 30]
+
+
+def test_call_gemini_non_503_error_does_not_retry():
+    """503 以外（例: 400）は即座に raise されリトライしない。"""
+    cfg = SummarizeConfig(provider="gemini", gemini_api_key="key123")
+
+    err = _make_genai_error(400)
+    modules, fake_client = _install_fake_genai_with_side_effect(err)
+
+    with patch.dict(sys.modules, modules):
+        with patch("transcribe.summarize.time.sleep") as mock_sleep:
+            with pytest.raises(Exception) as exc_info:
+                call_gemini("sys", "user", cfg)
+
+    assert getattr(exc_info.value, "code", None) == 400
+    assert fake_client.models.generate_content.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_call_gemini_503_retry_logs_warning(caplog):
+    """503 リトライ時に WARNING ログが出力される（リトライ回数と待機秒数を含む）。"""
+    cfg = SummarizeConfig(provider="gemini", gemini_api_key="key123")
+
+    fake_response = MagicMock()
+    fake_response.text = "OK"
+
+    err = _make_genai_error(503)
+    modules, _ = _install_fake_genai_with_side_effect([err, err, fake_response])
+
+    with caplog.at_level(logging.WARNING, logger="transcribe.summarize"):
+        with patch.dict(sys.modules, modules):
+            with patch("transcribe.summarize.time.sleep"):
+                call_gemini("sys", "user", cfg)
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 2
+    assert "503" in warnings[0].message
+    assert "1/3" in warnings[0].message and "5" in warnings[0].message
+    assert "2/3" in warnings[1].message and "15" in warnings[1].message
+
+
+def test_call_gemini_503_sleep_called_with_correct_backoffs():
+    """リトライ間の time.sleep が 5 → 15 → 30 秒の順で呼ばれる。"""
+    cfg = SummarizeConfig(provider="gemini", gemini_api_key="key123")
+
+    fake_response = MagicMock()
+    fake_response.text = "OK"
+
+    err = _make_genai_error(503)
+    # 503 を 3 回返したあと成功
+    modules, fake_client = _install_fake_genai_with_side_effect(
+        [err, err, err, fake_response]
+    )
+
+    with patch.dict(sys.modules, modules):
+        with patch("transcribe.summarize.time.sleep") as mock_sleep:
+            result = call_gemini("sys", "user", cfg)
+
+    assert result == "OK"
+    assert fake_client.models.generate_content.call_count == 4
+    assert [c.args[0] for c in mock_sleep.call_args_list] == [5, 15, 30]
 
 
 # ─── call_claude ──────────────────────────────────────────────────────────
