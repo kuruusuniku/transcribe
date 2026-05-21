@@ -76,3 +76,26 @@ google_docs:
   credentials_path: credentials.json
   token_path: token.json            # 自動生成（gitignore 対象）
   root_folder_id: ""                # Google Drive のルートフォルダ ID
+
+summarize:
+  # LLM による自動カスタムまとめ生成（KYOTA 式構造化まとめ）
+  #
+  # 使い方:
+  #   1. provider を選択（gemini 推奨: 無料枠あり）
+  #   2. 対応するAPIキーを設定（または環境変数 GEMINI_API_KEY / ANTHROPIC_API_KEY）
+  #   3. enabled: true に設定するとパイプライン完了時に自動実行
+  #
+  # 手動実行: uv run transcribe summarize  （未まとめのdoneジョブのみ）
+  #          uv run transcribe summarize --all
+  #          uv run transcribe summarize --id 13
+  #
+  # Gemini APIキー発行: https://aistudio.google.com/apikey
+  # Anthropic APIキー発行: https://console.anthropic.com/
+  enabled: false
+  provider: gemini                  # "gemini" or "claude"
+  gemini_api_key: ""                # または環境変数 GEMINI_API_KEY
+  gemini_model: "gemini-2.5-flash"
+  anthropic_api_key: ""             # または環境変数 ANTHROPIC_API_KEY
+  anthropic_model: "claude-haiku-4-5-20251001"
+  max_output_tokens: 8192
+  temperature: 0.3                  # 構造化まとめには低めが推奨

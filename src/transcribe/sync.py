@@ -87,6 +87,11 @@ def sync_job(
     output_dir: Path,
     cfg: GoogleDocsConfig,
 ) -> str | None:
+    """transcript.md と（存在すれば）summary.md を Google Docs に同期する。
+
+    成功時は transcript.md の Google Docs ID を返す。
+    summary.md がなくても transcript.md の同期は正常に行う。
+    """
     transcript_path = output_dir / "transcript.md"
     if not transcript_path.exists():
         logger.warning(f"transcript.md が見つかりません: {output_dir}")
@@ -108,4 +113,12 @@ def sync_job(
 
     title = _extract_title(transcript_path)
     doc_id = upload_as_google_doc(service, folder_id, title, transcript_path)
+
+    summary_path = output_dir / "summary.md"
+    if summary_path.exists():
+        try:
+            upload_as_google_doc(service, folder_id, f"{title}（まとめ）", summary_path)
+        except Exception as e:
+            logger.warning(f"summary.md の同期失敗（transcript は同期済み）: {e}")
+
     return doc_id

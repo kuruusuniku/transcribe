@@ -58,12 +58,20 @@ def _migrate_synced_at(conn: sqlite3.Connection) -> None:
         logger.info("マイグレーション: synced_at カラムを追加しました")
 
 
+def _migrate_summarized_at(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "summarized_at" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN summarized_at TEXT")
+        logger.info("マイグレーション: summarized_at カラムを追加しました")
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(SCHEMA)
         _migrate_source_type(conn)
         _migrate_synced_at(conn)
+        _migrate_summarized_at(conn)
     logger.debug(f"SQLite 初期化完了: {db_path}")
 
 
@@ -196,6 +204,24 @@ def record_synced(db_path: Path, job_id: int) -> None:
         conn.execute(
             """UPDATE jobs
                SET synced_at = CURRENT_TIMESTAMP,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (job_id,),
+        )
+
+
+def get_unsummarized_done_jobs(db_path: Path) -> list[sqlite3.Row]:
+    with _connect(db_path) as conn:
+        return conn.execute(
+            "SELECT * FROM jobs WHERE status = 'done' AND summarized_at IS NULL ORDER BY id"
+        ).fetchall()
+
+
+def record_summarized(db_path: Path, job_id: int) -> None:
+    with _connect(db_path) as conn:
+        conn.execute(
+            """UPDATE jobs
+               SET summarized_at = CURRENT_TIMESTAMP,
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = ?""",
             (job_id,),

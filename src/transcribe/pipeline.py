@@ -18,11 +18,13 @@ from .stages.transcriber import transcribe
 from .state import (
     get_pending_jobs,
     record_error,
+    record_summarized,
     record_synced,
     reset_for_retry,
     update_status,
     upsert_job,
 )
+from .summarize import generate_summary
 from .sync import sync_job
 from .utils import ensure_dir
 
@@ -211,6 +213,23 @@ def _run_job(
 
     update_status(db, job_id, "done", output_dir=str(job_output_dir))
     logger.info(f"[job {job_id}] 完了: {job_output_dir}")
+
+    # 自動まとめ生成（best-effort: 失敗してもジョブは done のまま）
+    if cfg.summarize.enabled and cfg.summarize.resolve_api_key():
+        try:
+            summary_path = generate_summary(
+                output_dir=job_output_dir,
+                video_url=url,
+                video_title=title,
+                cfg=cfg.summarize,
+                glossary_entries=glossary.substitutions,
+                source_type=source_type,
+            )
+            if summary_path:
+                record_summarized(db, job_id)
+                logger.info(f"[job {job_id}] まとめ生成完了: {summary_path}")
+        except Exception as e:
+            logger.warning(f"[job {job_id}] まとめ生成失敗（文字起こしは完了済み）: {e}")
 
     # Google Docs 自動同期
     if cfg.google_docs.enabled and cfg.google_docs.root_folder_id:

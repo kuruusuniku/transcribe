@@ -19,12 +19,15 @@ from .state import (
     get_all_jobs,
     get_job_by_id,
     get_job_by_url_or_id,
+    get_unsummarized_done_jobs,
     get_unsynced_done_jobs,
     init_db,
+    record_summarized,
     record_synced,
     reset_for_retry,
     reset_for_rerun,
 )
+from .summarize import generate_summary
 from .sync import sync_job
 from .utils import ensure_dir
 
@@ -319,6 +322,89 @@ def sync(
         except Exception as e:
             logger.error(f"[job {job_id}] 同期失敗: {e}")
             console.print(f"  [red]✗[/red] job {job_id}: {e}")
+            fail_count += 1
+
+    console.print(f"\n成功: {success_count}  スキップ: {skip_count}  失敗: {fail_count}")
+
+
+@app.command()
+def summarize(
+    all_jobs: bool = typer.Option(False, "--all", help="done ジョブを全件再まとめ（summarized_at を無視）"),
+    job_id: int | None = typer.Option(None, "--id", help="特定ジョブIDのみ処理"),
+) -> None:
+    """完了済みジョブに対して LLM でカスタムまとめを生成する"""
+    cfg, glossary = _load_cfg_and_glossary()
+    logger = logging.getLogger(__name__)
+
+    if not cfg.summarize.enabled:
+        console.print(
+            "[yellow]まとめ生成が無効です。[/yellow]\n"
+            "config.yaml で summarize.enabled を true に設定してください。"
+        )
+        raise typer.Exit(0)
+
+    api_key = cfg.summarize.resolve_api_key()
+    if not api_key:
+        provider = cfg.summarize.provider
+        env_var = "GEMINI_API_KEY" if provider == "gemini" else "ANTHROPIC_API_KEY"
+        cfg_key = "gemini_api_key" if provider == "gemini" else "anthropic_api_key"
+        console.print(
+            f"[yellow]{provider} の API キーが設定されていません。[/yellow]\n"
+            f"config.yaml の summarize.{cfg_key} または 環境変数 {env_var} を設定してください。"
+        )
+        raise typer.Exit(1)
+
+    if job_id is not None:
+        job = get_job_by_id(cfg.state_db, job_id)
+        if job is None:
+            console.print(f"[red]ジョブ {job_id} が見つかりません[/red]")
+            raise typer.Exit(1)
+        if job["status"] != "done":
+            console.print(f"[yellow]ジョブ {job_id} は done 状態ではありません: {job['status']}[/yellow]")
+            raise typer.Exit(0)
+        jobs = [job]
+    elif all_jobs:
+        jobs = get_all_done_jobs(cfg.state_db)
+    else:
+        jobs = get_unsummarized_done_jobs(cfg.state_db)
+
+    if not jobs:
+        console.print("[yellow]まとめ対象のジョブがありません[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(f"[green]{len(jobs)} 件をまとめます[/green]")
+
+    success_count = 0
+    skip_count = 0
+    fail_count = 0
+
+    for job in jobs:
+        jid = job["id"]
+        output_dir = Path(job["output_dir"]) if job["output_dir"] else None
+        if output_dir is None or not output_dir.exists():
+            logger.warning(f"[job {jid}] 出力ディレクトリなし、スキップ")
+            skip_count += 1
+            continue
+
+        source_type = job["source_type"] if "source_type" in job.keys() else "youtube"
+        try:
+            summary_path = generate_summary(
+                output_dir=output_dir,
+                video_url=job["url"],
+                video_title=job["title"] or "",
+                cfg=cfg.summarize,
+                glossary_entries=glossary.substitutions,
+                source_type=source_type,
+            )
+            if summary_path:
+                record_summarized(cfg.state_db, jid)
+                console.print(f"  [green]✓[/green] job {jid}: {job['title'] or job['url']}")
+                success_count += 1
+            else:
+                skip_count += 1
+        except Exception as e:
+            logger.error(f"[job {jid}] まとめ失敗: {e}")
+            console.print(f"  [red]✗[/red] job {jid}: {e}")
             fail_count += 1
 
     console.print(f"\n成功: {success_count}  スキップ: {skip_count}  失敗: {fail_count}")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -78,6 +79,25 @@ class GoogleDocsConfig:
 
 
 @dataclass
+class SummarizeConfig:
+    enabled: bool = False
+    provider: str = "gemini"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-haiku-4-5-20251001"
+    max_output_tokens: int = 8192
+    temperature: float = 0.3
+
+    def resolve_api_key(self) -> str:
+        if self.provider == "gemini":
+            return self.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
+        if self.provider == "claude":
+            return self.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        return ""
+
+
+@dataclass
 class AppConfig:
     paths: PathsConfig
     youtube: YoutubeConfig
@@ -87,6 +107,7 @@ class AppConfig:
     retry: RetryConfig
     logging: LoggingConfig
     google_docs: GoogleDocsConfig = field(default_factory=GoogleDocsConfig)
+    summarize: SummarizeConfig = field(default_factory=SummarizeConfig)
 
     @property
     def work_dir(self) -> Path:
@@ -186,6 +207,18 @@ def load_config(config_path: Path) -> AppConfig:
         root_folder_id=gd_raw.get("root_folder_id", ""),
     )
 
+    sum_raw = raw.get("summarize", {})
+    summarize = SummarizeConfig(
+        enabled=sum_raw.get("enabled", False),
+        provider=sum_raw.get("provider", "gemini"),
+        gemini_api_key=sum_raw.get("gemini_api_key", ""),
+        gemini_model=sum_raw.get("gemini_model", "gemini-2.5-flash"),
+        anthropic_api_key=sum_raw.get("anthropic_api_key", ""),
+        anthropic_model=sum_raw.get("anthropic_model", "claude-haiku-4-5-20251001"),
+        max_output_tokens=sum_raw.get("max_output_tokens", 8192),
+        temperature=sum_raw.get("temperature", 0.3),
+    )
+
     return AppConfig(
         paths=paths,
         youtube=youtube,
@@ -195,6 +228,7 @@ def load_config(config_path: Path) -> AppConfig:
         retry=retry,
         logging=log_cfg,
         google_docs=google_docs,
+        summarize=summarize,
     )
 
 
