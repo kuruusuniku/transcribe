@@ -56,10 +56,12 @@ output:
 
 # ローカルファイル対応
 # urls.txt にファイルパスを記載するか、`transcribe file <path>` で直接指定可能
-# 現在 MP3 のみ対応。URL とローカルパスの混在が可能。
+# 対応形式: .mp3, .m4a。URL とローカルパスの混在が可能。
+# .m4a は内部で文字起こしできるほか、`transcribe convert <path>` で .mp3 に変換も可能。
 # 例:
 #   https://www.youtube.com/watch?v=abc123
 #   C:\Users\sttmn\recordings\keiko.mp3
+#   C:\Users\sttmn\recordings\session.m4a
 #   ./data/audio/session.mp3
 
 retry:

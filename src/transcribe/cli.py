@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,8 @@ _CONFIG_PATH = _PROJECT_ROOT / "config.yaml"
 _GLOSSARY_PATH = _PROJECT_ROOT / "glossary.yaml"
 _URLS_PATH = _PROJECT_ROOT / "urls.txt"
 
+SUPPORTED_AUDIO_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".m4a"})
+
 
 def _load_cfg_and_glossary():
     cfg = load_config(_CONFIG_PATH)
@@ -56,8 +59,9 @@ def _validate_local_path(path_str: str) -> str:
     p = Path(path_str).resolve()
     if not p.exists():
         raise FileNotFoundError(f"ファイルが見つかりません: {path_str}")
-    if p.suffix.lower() != ".mp3":
-        raise ValueError(f"現在 MP3 のみ対応しています（将来他形式にも対応予定）: {p.suffix}")
+    if p.suffix.lower() not in SUPPORTED_AUDIO_EXTENSIONS:
+        allowed = ", ".join(sorted(SUPPORTED_AUDIO_EXTENSIONS))
+        raise ValueError(f"対応していない拡張子です（対応: {allowed}）: {p.suffix}")
     return str(p)
 
 
@@ -115,17 +119,18 @@ def run(
 
 @app.command()
 def file(
-    path: Path = typer.Argument(..., help="MP3ファイルパス"),
+    path: Path = typer.Argument(..., help="音声ファイルパス（mp3 / m4a）"),
 ) -> None:
-    """ローカル MP3 ファイルを文字起こしする"""
+    """ローカル音声ファイル（mp3 / m4a）を文字起こしする"""
     cfg, glossary = _load_cfg_and_glossary()
 
     resolved = Path(path).resolve()
     if not resolved.exists():
         console.print(f"[red]ファイルが見つかりません: {path}[/red]")
         raise typer.Exit(1)
-    if resolved.suffix.lower() != ".mp3":
-        console.print(f"[red]現在 MP3 のみ対応しています（将来他形式にも対応予定）: {resolved.suffix}[/red]")
+    if resolved.suffix.lower() not in SUPPORTED_AUDIO_EXTENSIONS:
+        allowed = ", ".join(sorted(SUPPORTED_AUDIO_EXTENSIONS))
+        console.print(f"[red]対応していない拡張子です（対応: {allowed}）: {resolved.suffix}[/red]")
         raise typer.Exit(1)
 
     abs_path = str(resolved)
@@ -140,6 +145,62 @@ def file(
         console=console,
     ) as progress:
         run_pipeline([abs_path], cfg, glossary, progress=progress)
+
+
+@app.command()
+def convert(
+    path: Path = typer.Argument(..., help="変換元の音声ファイル（現在 .m4a のみ対応）"),
+    force: bool = typer.Option(False, "--force", "-f", help="出力先 .mp3 が存在しても確認なしで上書き"),
+) -> None:
+    """音声ファイルを mp3 に変換する（faster-whisper 同梱の ffmpeg を使用）"""
+    resolved = Path(path).resolve()
+    if not resolved.exists():
+        console.print(f"[red]ファイルが見つかりません: {path}[/red]")
+        raise typer.Exit(1)
+
+    ext = resolved.suffix.lower()
+    if ext == ".mp3":
+        console.print(f"[yellow]既に MP3 です: {resolved.name}[/yellow]")
+        raise typer.Exit(0)
+    if ext != ".m4a":
+        console.print(f"[red]対応していない変換元拡張子です（対応: .m4a）: {resolved.suffix}[/red]")
+        raise typer.Exit(1)
+
+    dest = resolved.with_suffix(".mp3")
+    if dest.exists() and not force:
+        if not typer.confirm(f"{dest.name} が既に存在します。上書きしますか?"):
+            console.print("[yellow]中止しました[/yellow]")
+            raise typer.Exit(0)
+
+    console.print(f"[green]変換中: {resolved.name} → {dest.name}[/green]")
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(resolved),
+                "-vn",
+                "-c:a",
+                "libmp3lame",
+                "-q:a",
+                "2",
+                str(dest),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        console.print("[red]ffmpeg が見つかりません。PATH を確認してください。[/red]")
+        raise typer.Exit(1)
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
+        console.print(f"[red]ffmpeg 変換に失敗しました（exit={e.returncode}）[/red]")
+        if stderr:
+            console.print(stderr)
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ 変換完了: {dest}[/green]")
 
 
 @app.command()
