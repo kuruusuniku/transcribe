@@ -357,6 +357,91 @@ def test_call_claude_no_api_key():
         call_claude("sys", "user", cfg)
 
 
+# ─── call_claude 503 リトライ ─────────────────────────────────────────────
+
+
+def _make_anthropic_503():
+    """status_code=503 を持つ偽の APIStatusError を構築する。"""
+    err = Exception("503 Service Unavailable")
+    err.status_code = 503
+    return err
+
+
+def _install_fake_anthropic_with_side_effect(side_effect):
+    """messages.create の side_effect を任意指定できる版。"""
+    fake_client = MagicMock()
+    fake_client.messages.create.side_effect = side_effect
+
+    fake_anthropic = MagicMock()
+    fake_anthropic.Anthropic.return_value = fake_client
+
+    return {"anthropic": fake_anthropic}, fake_client
+
+
+def test_call_claude_503_retries_then_succeeds():
+    """503 が 1 回 → リトライして成功。"""
+    cfg = SummarizeConfig(provider="claude", anthropic_api_key="sk-test")
+
+    fake_content = MagicMock()
+    fake_content.text = "CLAUDE_RETRY_OK"
+    fake_message = MagicMock()
+    fake_message.content = [fake_content]
+
+    err = _make_anthropic_503()
+    modules, fake_client = _install_fake_anthropic_with_side_effect([err, fake_message])
+
+    with patch.dict(sys.modules, modules):
+        with patch("transcribe.summarize.time.sleep") as mock_sleep:
+            result = call_claude("sys", "user", cfg)
+
+    assert result == "CLAUDE_RETRY_OK"
+    assert fake_client.messages.create.call_count == 2
+    mock_sleep.assert_called_once_with(5)
+
+
+def test_call_claude_503_max_retries_raises():
+    """503 が連続発生し最大リトライ後に元の例外を raise する。"""
+    cfg = SummarizeConfig(provider="claude", anthropic_api_key="sk-test")
+
+    err = _make_anthropic_503()
+    modules, fake_client = _install_fake_anthropic_with_side_effect(err)
+
+    with patch.dict(sys.modules, modules):
+        with patch("transcribe.summarize.time.sleep") as mock_sleep:
+            with pytest.raises(Exception) as exc_info:
+                call_claude("sys", "user", cfg)
+
+    assert getattr(exc_info.value, "status_code", None) == 503
+    # 初回 + 3 リトライ = 4 回
+    assert fake_client.messages.create.call_count == 4
+    assert mock_sleep.call_count == 3
+    assert [c.args[0] for c in mock_sleep.call_args_list] == [5, 10, 20]
+
+
+def test_call_claude_503_retry_logs_warning(caplog):
+    """503 リトライ時に WARNING ログが出力される（リトライ回数と待機秒数を含む）。"""
+    cfg = SummarizeConfig(provider="claude", anthropic_api_key="sk-test")
+
+    fake_content = MagicMock()
+    fake_content.text = "OK"
+    fake_message = MagicMock()
+    fake_message.content = [fake_content]
+
+    err = _make_anthropic_503()
+    modules, _ = _install_fake_anthropic_with_side_effect([err, err, fake_message])
+
+    with caplog.at_level(logging.WARNING, logger="transcribe.summarize"):
+        with patch.dict(sys.modules, modules):
+            with patch("transcribe.summarize.time.sleep"):
+                call_claude("sys", "user", cfg)
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 2
+    assert "503" in warnings[0].message
+    assert "1/3" in warnings[0].message and "5" in warnings[0].message
+    assert "2/3" in warnings[1].message and "10" in warnings[1].message
+
+
 # ─── SummarizeConfig.resolve_api_key ──────────────────────────────────────
 
 

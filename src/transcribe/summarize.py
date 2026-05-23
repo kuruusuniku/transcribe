@@ -10,6 +10,29 @@ logger = logging.getLogger(__name__)
 
 
 _GEMINI_503_RETRY_BACKOFFS_SEC = (5, 15, 30)
+_CLAUDE_503_RETRY_BACKOFFS_SEC = (5, 10, 20)
+
+
+def _call_with_retry(fn, provider_name: str, backoffs: tuple) -> str:
+    """503 Service Unavailable を自動リトライするヘルパー。
+
+    fn を呼び出し、503 系エラー（.code==503 または .status_code==503）なら
+    backoffs に従ってリトライする。それ以外のエラーおよびリトライ上限超過は即座に伝播する。
+    """
+    max_retries = len(backoffs)
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except Exception as e:
+            is_503 = getattr(e, "code", None) == 503 or getattr(e, "status_code", None) == 503
+            if not is_503 or attempt >= max_retries:
+                raise
+            wait = backoffs[attempt]
+            logger.warning(
+                f"{provider_name} 503, retry {attempt + 1}/{max_retries} (wait {wait}s)"
+            )
+            time.sleep(wait)
+    raise RuntimeError("到達不能: 503 リトライループが想定外に終了しました")
 
 
 SYSTEM_PROMPT_BASE = """\
@@ -178,30 +201,19 @@ def call_gemini(
 
     client = genai.Client(api_key=api_key)
 
-    max_retries = len(_GEMINI_503_RETRY_BACKOFFS_SEC)
-    for attempt in range(max_retries + 1):
-        try:
-            response = client.models.generate_content(
-                model=cfg.gemini_model,
-                contents=user_message,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    max_output_tokens=cfg.max_output_tokens,
-                    temperature=cfg.temperature,
-                ),
-            )
-            return response.text or ""
-        except Exception as e:
-            if getattr(e, "code", None) != 503 or attempt >= max_retries:
-                raise
-            wait = _GEMINI_503_RETRY_BACKOFFS_SEC[attempt]
-            logger.warning(
-                f"Gemini API が 503 を返したためリトライします "
-                f"({attempt + 1}/{max_retries} 回目、{wait} 秒待機)"
-            )
-            time.sleep(wait)
+    def _invoke():
+        response = client.models.generate_content(
+            model=cfg.gemini_model,
+            contents=user_message,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                max_output_tokens=cfg.max_output_tokens,
+                temperature=cfg.temperature,
+            ),
+        )
+        return response.text or ""
 
-    raise RuntimeError("到達不能: 503 リトライループが想定外に終了しました")
+    return _call_with_retry(_invoke, "Gemini", _GEMINI_503_RETRY_BACKOFFS_SEC)
 
 
 def call_claude(
@@ -220,16 +232,20 @@ def call_claude(
         )
 
     client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model=cfg.anthropic_model,
-        max_tokens=cfg.max_output_tokens,
-        temperature=cfg.temperature,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}],
-    )
-    if not message.content:
-        return ""
-    return message.content[0].text
+
+    def _invoke():
+        message = client.messages.create(
+            model=cfg.anthropic_model,
+            max_tokens=cfg.max_output_tokens,
+            temperature=cfg.temperature,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        if not message.content:
+            return ""
+        return message.content[0].text
+
+    return _call_with_retry(_invoke, "Claude", _CLAUDE_503_RETRY_BACKOFFS_SEC)
 
 
 def generate_summary(
