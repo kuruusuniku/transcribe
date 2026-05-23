@@ -5,6 +5,7 @@ import logging
 import re
 from pathlib import Path
 
+import httpx
 from notion_client import Client
 
 from .config import NotionConfig
@@ -176,11 +177,18 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
     existing_page_id: str | None = None
     if video_url.startswith(("http://", "https://")):
         try:
-            results = client.databases.query(
-                database_id=cfg.database_id,
-                filter={"property": "URL", "url": {"equals": video_url}},
+            resp = httpx.post(
+                f"https://api.notion.com/v1/databases/{cfg.database_id}/query",
+                headers={
+                    "Authorization": f"Bearer {cfg.token}",
+                    "Notion-Version": "2022-06-28",
+                    "Content-Type": "application/json",
+                },
+                json={"filter": {"property": "URL", "url": {"equals": video_url}}},
+                timeout=30,
             )
-            pages = results.get("results", [])
+            resp.raise_for_status()
+            pages = resp.json().get("results", [])
             if pages:
                 existing_page_id = pages[0]["id"]
         except Exception as e:
