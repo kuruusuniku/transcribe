@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-**最終更新日**: 2026-05-22
+**最終更新日**: 2026-05-23
 
 YouTube限定公開動画（武術稽古指導の録画）をローカルGPUで自動文字起こしし、まとめ生成・Google Docs 同期まで一気通貫で行うツール。
 
@@ -44,6 +44,8 @@ YouTube限定公開動画（武術稽古指導の録画）をローカルGPUで�
 | OAuth 認証 | google-auth-httplib2, google-auth-oauthlib |
 | LLM まとめ（プライマリ） | google-genai >= 1.0（Gemini 2.5 Flash） |
 | LLM まとめ（フォールバック） | anthropic >= 0.40（Claude Haiku） |
+| Web UI サーバー | fastapi >= 0.115, uvicorn[standard] >= 0.30 |
+| ファイルアップロード | python-multipart >= 0.0.9 |
 
 ---
 
@@ -78,11 +80,24 @@ transcribe/
 │   ├── utils.py
 │   ├── sync.py           # Google Docs 同期（OAuth + Drive API）
 │   ├── summarize.py      # LLM 自動カスタムまとめ（Gemini/Claude）
-│   └── stages/
-│       ├── downloader.py
-│       ├── separator.py
-│       ├── transcriber.py
-│       └── formatter.py
+│   ├── stages/
+│   │   ├── downloader.py
+│   │   ├── separator.py
+│   │   ├── transcriber.py
+│   │   └── formatter.py
+│   └── web/              # FastAPI アプリ一式
+│       ├── app.py            # FastAPI アプリ本体
+│       ├── runner.py         # 非同期コマンド実行エンジン
+│       ├── deps.py           # get_config() 依存関数
+│       ├── routes/
+│       │   ├── jobs.py       # ジョブ一覧・詳細・閲覧 API
+│       │   ├── commands.py   # run/sync/summarize/rerun API
+│       │   └── files.py      # ファイルアップロード・変換 API
+│       ├── ws/
+│       │   └── log_stream.py # WebSocket ログストリーミング
+│       └── static/
+│           ├── index.html    # React エントリポイント
+│           └── app.jsx       # React コンポーネント群
 └── tests/
     ├── test_local_file.py     # 37件
     ├── test_pipeline_retry.py
@@ -90,10 +105,11 @@ transcribe/
     ├── test_rerun.py
     ├── test_separator.py
     ├── test_summarize.py      # 34件
-    └── test_sync.py           # 19件
+    ├── test_sync.py           # 19件
+    └── test_web.py            # 18件
 ```
 
-**テスト総数**: 142件（全パス）
+**テスト総数**: 165件（全パス）
 
 ---
 
@@ -162,6 +178,16 @@ transcribe/
 - API キーは `config.yaml` または環境変数（`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`）
 - テスト 34件
 
+### 10. Web UI（completed）
+- `transcribe web [--host] [--port] [--reload]` で http://localhost:8000 を起動
+- 全コマンドをブラウザから操作（run / file / sync / summarize / rerun / convert）
+- WebSocket でリアルタイムログストリーミング
+- ファイルアップロードでローカル mp3/m4a を文字起こし
+- `transcript.md` / `summary.md` のインライン閲覧
+- React CDN（ビルドステップ不要）、将来の Next.js 移行を視野に入れた設計
+- state.db の変更なし
+- テスト 18件追加（全165件パス）
+
 ---
 
 ## 6. 本運用フェーズの状況
@@ -179,10 +205,10 @@ transcribe/
 
 ## 7. 次フェーズ / PENDING
 
-- summarize の 503 リトライ（数秒 backoff で自動再試行）
 - glossary 6回目の確認待ち用語（約 20 件、`t-UHRZTt7Ag`）
-- `initial_prompt` の 244 トークン制限接近
-- (d) その他: Notion 連携、Web UI、WhisperX（優先度低）
+- WhisperX 対応（単語単位タイムスタンプ、優先度低）
+  - `config.yaml` の `backend: faster-whisper or whisperx` で切り替え可能にする
+  - `transcriber.py` をディスパッチャ化 → `backends/` に分割
 
 ---
 
@@ -220,11 +246,14 @@ transcribe/
 - Google Docs 同期の初回実行時はブラウザ認証が必要
 - Gemini 無料枠は高負荷時に 503 が出ることがある（再実行で回復）
 - summarize / sync の失敗はジョブ全体を失敗にしない（best-effort）
+- Web UI は `uv run transcribe web` で起動、http://localhost:8000 でアクセス
+- 外部公開する場合は `--host 0.0.0.0`（セキュリティリスクあり、チーム共有時は Next.js 分離構成を推奨）
 
 ---
 
 ## 11. 直近のコミット履歴
 
+- `feat: Web UI を追加（FastAPI + React）`
 - `feat: m4a ファイルの文字起こし対応と convert コマンド追加`
 - `feat: LLM による自動カスタムまとめ生成機能を追加`
 - `feat: Google Docs 同期機能を追加`
