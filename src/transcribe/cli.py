@@ -472,6 +472,24 @@ def summarize(
 
 
 @app.command()
+def web(
+    host: str = typer.Option("", "--host", help="ホストアドレス（空の場合は config.yaml の値を使用）"),
+    port: int = typer.Option(0, "--port", "-p", help="ポート番号（0 の場合は config.yaml の値を使用）"),
+    reload: bool = typer.Option(False, "--reload", help="開発時のホットリロード"),
+) -> None:
+    """Web UI サーバーを起動する（http://localhost:8000）"""
+    import uvicorn
+    from .web.app import app as web_app
+
+    cfg, _ = _load_cfg_and_glossary()
+    actual_host = host or cfg.web.host
+    actual_port = port or cfg.web.port
+
+    console.print(f"[green]transcribe Web UI を起動します: http://{actual_host}:{actual_port}[/green]")
+    uvicorn.run(web_app, host=actual_host, port=actual_port, reload=reload)
+
+
+@app.command()
 def clean() -> None:
     """data/work の一時ファイルを削除する"""
     cfg, _ = _load_cfg_and_glossary()

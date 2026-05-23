@@ -98,6 +98,12 @@ class SummarizeConfig:
 
 
 @dataclass
+class WebConfig:
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+
+@dataclass
 class AppConfig:
     paths: PathsConfig
     youtube: YoutubeConfig
@@ -108,6 +114,7 @@ class AppConfig:
     logging: LoggingConfig
     google_docs: GoogleDocsConfig = field(default_factory=GoogleDocsConfig)
     summarize: SummarizeConfig = field(default_factory=SummarizeConfig)
+    web: WebConfig = field(default_factory=WebConfig)
 
     @property
     def work_dir(self) -> Path:
@@ -219,6 +226,12 @@ def load_config(config_path: Path) -> AppConfig:
         temperature=sum_raw.get("temperature", 0.3),
     )
 
+    web_raw = raw.get("web", {})
+    web = WebConfig(
+        host=web_raw.get("host", "127.0.0.1"),
+        port=web_raw.get("port", 8000),
+    )
+
     return AppConfig(
         paths=paths,
         youtube=youtube,
@@ -229,6 +242,7 @@ def load_config(config_path: Path) -> AppConfig:
         logging=log_cfg,
         google_docs=google_docs,
         summarize=summarize,
+        web=web,
     )
 
 

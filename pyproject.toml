@@ -19,6 +19,9 @@ dependencies = [
     "google-auth-oauthlib>=1.0",
     "google-genai>=1.0",
     "anthropic>=0.40",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]
@@ -47,4 +50,5 @@ explicit = true
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "httpx>=0.27",
 ]
