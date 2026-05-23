@@ -67,6 +67,7 @@ function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
   const [fileContent, setFileContent] = useState(null);
   const [fileType, setFileType] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     setJob(null);
@@ -102,6 +103,7 @@ function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
 
   const showFile = async (type) => {
     if (loading) return;
+    setEditing(false);
     setLoading(true);
     setFileType(type);
     try {
@@ -128,6 +130,32 @@ function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
         <div className="detail-actions">
           <button onClick={() => showFile('transcript')} disabled={loading}>transcript</button>
           <button onClick={() => showFile('summary')} disabled={loading}>summary</button>
+          <button onClick={() => postJson('summarize', { job_id: jobId })} disabled={loading}>まとめ再生成</button>
+          {fileType === 'transcript' && !editing && (
+            <button onClick={() => setEditing(true)} disabled={loading}>編集</button>
+          )}
+          {fileType === 'transcript' && editing && (
+            <>
+              <button onClick={async () => {
+                try {
+                  const res = await fetch(`/api/jobs/${jobId}/transcript`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: fileContent }),
+                  });
+                  if (res.ok) {
+                    setEditing(false);
+                    onMessage('[完了] transcript.md を保存しました');
+                  } else {
+                    onMessage('[エラー] 保存に失敗しました');
+                  }
+                } catch {
+                  onMessage('[エラー] 保存に失敗しました');
+                }
+              }} disabled={loading}>保存</button>
+              <button onClick={() => { setEditing(false); showFile('transcript'); }} disabled={loading}>キャンセル</button>
+            </>
+          )}
           <button onClick={async () => {
             const ok = await postJson('rerun', { url_or_id: String(jobId) });
             if (ok) onClose();
@@ -143,7 +171,15 @@ function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
       </div>
       {fileContent !== null && (
         <div className="file-view">
-          <pre>{fileContent}</pre>
+          {editing ? (
+            <textarea
+              style={{ width: '100%', height: '100%', minHeight: '400px', fontFamily: 'monospace', fontSize: '13px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', padding: '8px', boxSizing: 'border-box', resize: 'vertical' }}
+              value={fileContent}
+              onChange={e => setFileContent(e.target.value)}
+            />
+          ) : (
+            <pre>{fileContent}</pre>
+          )}
         </div>
       )}
     </div>
