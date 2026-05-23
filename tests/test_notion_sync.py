@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from transcribe.config import NotionConfig
 from transcribe.notion_sync import (
     _build_properties,
     _parse_rich_text,
+    _query_notion_db,
     md_to_blocks,
     sync_to_notion,
 )
@@ -219,12 +222,13 @@ def test_sync_to_notion_no_summary_returns_false(output_dir_no_summary, notion_c
 # ─── sync_to_notion: 新規ページ作成 ──────────────────────────────────────
 
 
+@patch("transcribe.notion_sync._query_notion_db")
 @patch("transcribe.notion_sync.Client")
-def test_sync_to_notion_creates_new_page(mock_client_cls, output_dir_with_summary, notion_cfg):
+def test_sync_to_notion_creates_new_page(mock_client_cls, mock_query_db, output_dir_with_summary, notion_cfg):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
 
-    mock_client.databases.query.return_value = {"results": []}
+    mock_query_db.return_value = []
     mock_client.pages.create.return_value = {"id": "new-page-id"}
 
     result = sync_to_notion(
@@ -244,12 +248,13 @@ def test_sync_to_notion_creates_new_page(mock_client_cls, output_dir_with_summar
 # ─── sync_to_notion: 既存ページ更新 ──────────────────────────────────────
 
 
+@patch("transcribe.notion_sync._query_notion_db")
 @patch("transcribe.notion_sync.Client")
-def test_sync_to_notion_updates_existing_page(mock_client_cls, output_dir_with_summary, notion_cfg):
+def test_sync_to_notion_updates_existing_page(mock_client_cls, mock_query_db, output_dir_with_summary, notion_cfg):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
 
-    mock_client.databases.query.return_value = {"results": [{"id": "existing-page-id"}]}
+    mock_query_db.return_value = [{"id": "existing-page-id"}]
     mock_client.blocks.children.list.return_value = {"results": [], "has_more": False}
 
     result = sync_to_notion(
@@ -268,8 +273,9 @@ def test_sync_to_notion_updates_existing_page(mock_client_cls, output_dir_with_s
 # ─── sync_to_notion: ローカルファイルは URL 検索しない ────────────────────
 
 
+@patch("transcribe.notion_sync._query_notion_db")
 @patch("transcribe.notion_sync.Client")
-def test_sync_to_notion_local_skips_url_search(mock_client_cls, tmp_path, notion_cfg):
+def test_sync_to_notion_local_skips_url_search(mock_client_cls, mock_query_db, tmp_path, notion_cfg):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
     mock_client.pages.create.return_value = {"id": "page-id"}
@@ -281,7 +287,7 @@ def test_sync_to_notion_local_skips_url_search(mock_client_cls, tmp_path, notion
     result = sync_to_notion(d, "C:/audio/test.mp3", notion_cfg)
 
     assert result is True
-    mock_client.databases.query.assert_not_called()
+    mock_query_db.assert_not_called()
 
 
 # ─── state.py: notion_synced_at ───────────────────────────────────────────
@@ -464,3 +470,59 @@ def test_cli_sync_notion_all_flag(mock_sync, tmp_path):
 
     assert result.exit_code == 0
     assert mock_sync.call_count == 3
+
+
+# ─── _query_notion_db: 503 リトライ ──────────────────────────────────────
+
+
+def _make_503_response():
+    resp = MagicMock()
+    resp.status_code = 503
+    resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "503 Service Unavailable", request=MagicMock(), response=resp
+    )
+    return resp
+
+
+def _make_ok_response(results):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.raise_for_status.return_value = None
+    resp.json.return_value = {"results": results}
+    return resp
+
+
+@patch("transcribe.notion_sync.time.sleep")
+@patch("transcribe.notion_sync.httpx.post")
+def test_query_notion_db_503_retries_then_succeeds(mock_post, mock_sleep, notion_cfg):
+    mock_post.side_effect = [_make_503_response(), _make_ok_response([{"id": "page-id"}])]
+
+    pages = _query_notion_db(notion_cfg, "https://example.com/video")
+
+    assert pages == [{"id": "page-id"}]
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once_with(5)
+
+
+@patch("transcribe.notion_sync.time.sleep")
+@patch("transcribe.notion_sync.httpx.post")
+def test_query_notion_db_503_max_retries_raises(mock_post, mock_sleep, notion_cfg):
+    mock_post.return_value = _make_503_response()
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _query_notion_db(notion_cfg, "https://example.com/video")
+
+    assert mock_post.call_count == 4  # 初回 + 3回リトライ
+    assert mock_sleep.call_count == 3
+
+
+@patch("transcribe.notion_sync.time.sleep")
+@patch("transcribe.notion_sync.httpx.post")
+def test_query_notion_db_503_logs_warning(mock_post, mock_sleep, notion_cfg, caplog):
+    mock_post.side_effect = [_make_503_response(), _make_ok_response([])]
+
+    with caplog.at_level(logging.WARNING, logger="transcribe.notion_sync"):
+        _query_notion_db(notion_cfg, "https://example.com/video")
+
+    warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("503" in m and "retry" in m for m in warning_msgs)

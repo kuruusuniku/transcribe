@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 _RICH_TEXT_LIMIT = 2000
 _BLOCKS_PER_REQUEST = 100
+_NOTION_503_RETRY_BACKOFFS_SEC = (5, 10, 20)
 
 
 def _split_text(text: str, limit: int) -> list[str]:
@@ -155,6 +157,37 @@ def _append_blocks_in_batches(client, page_id: str, blocks: list[dict]) -> None:
         client.blocks.children.append(block_id=page_id, children=blocks[i : i + _BLOCKS_PER_REQUEST])
 
 
+def _query_notion_db(cfg: NotionConfig, video_url: str) -> list[dict]:
+    """URL で既存ページを検索する。503 は自動リトライ。"""
+    backoffs = _NOTION_503_RETRY_BACKOFFS_SEC
+    max_retries = len(backoffs)
+    resp = None
+    for attempt in range(max_retries + 1):
+        try:
+            resp = httpx.post(
+                f"https://api.notion.com/v1/databases/{cfg.database_id}/query",
+                headers={
+                    "Authorization": f"Bearer {cfg.token}",
+                    "Notion-Version": "2022-06-28",
+                    "Content-Type": "application/json",
+                },
+                json={"filter": {"property": "URL", "url": {"equals": video_url}}},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+        except Exception as e:
+            is_503 = getattr(e, "status_code", None) == 503 or (
+                hasattr(resp, "status_code") and resp.status_code == 503
+            )
+            if not is_503 or attempt >= max_retries:
+                raise
+            wait = backoffs[attempt]
+            logger.warning(f"Notion API 503, retry {attempt + 1}/{max_retries} (wait {wait}s)")
+            time.sleep(wait)
+    raise RuntimeError("到達不能: 503 リトライループが想定外に終了しました")
+
+
 def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
     summary_path = output_dir / "summary.md"
     if not summary_path.exists():
@@ -177,18 +210,7 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
     existing_page_id: str | None = None
     if video_url.startswith(("http://", "https://")):
         try:
-            resp = httpx.post(
-                f"https://api.notion.com/v1/databases/{cfg.database_id}/query",
-                headers={
-                    "Authorization": f"Bearer {cfg.token}",
-                    "Notion-Version": "2022-06-28",
-                    "Content-Type": "application/json",
-                },
-                json={"filter": {"property": "URL", "url": {"equals": video_url}}},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            pages = resp.json().get("results", [])
+            pages = _query_notion_db(cfg, video_url)
             if pages:
                 existing_page_id = pages[0]["id"]
         except Exception as e:
