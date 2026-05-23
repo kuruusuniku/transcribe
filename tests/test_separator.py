@@ -12,7 +12,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-import torch
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -48,13 +47,14 @@ def demucs_sys_mocks():
     pretrained_mod = MagicMock()
     audio_mod = MagicMock()
 
-    keys = ["demucs", "demucs.apply", "demucs.pretrained", "demucs.audio"]
+    keys = ["demucs", "demucs.apply", "demucs.pretrained", "demucs.audio", "torchaudio"]
     saved = {k: sys.modules.get(k) for k in keys}
 
     sys.modules["demucs"] = MagicMock()
     sys.modules["demucs.apply"] = apply_mod
     sys.modules["demucs.pretrained"] = pretrained_mod
     sys.modules["demucs.audio"] = audio_mod
+    sys.modules["torchaudio"] = MagicMock()
 
     yield apply_mod, pretrained_mod, audio_mod
 
@@ -70,6 +70,8 @@ def _run_separate(audio_path, work_dir, cfg, demucs_sys_mocks):
     apply_mod, pretrained_mod, audio_mod = demucs_sys_mocks
     model_mock = _make_model_mock()
     pretrained_mod.get_model.return_value = model_mock
+
+    import torch
 
     # apply_model の戻り値: [batch=1, sources=4, channels=2, time=N]
     fake_sources = torch.zeros(1, len(SOURCES), AUDIO_CHANNELS, N_SAMPLES)
@@ -175,6 +177,8 @@ class TestSeparateAudioFinallyOnException:
         pretrained_mod.get_model.return_value = model_mock
         apply_mod.apply_model.side_effect = RuntimeError("GPU OOM")
         audio_mod.convert_audio.side_effect = lambda wav, sr, tsr, ch: wav
+
+        import torch
 
         with patch("torchaudio.load", return_value=(torch.zeros(AUDIO_CHANNELS, N_SAMPLES), 16000)), \
              patch("torchaudio.save"), \

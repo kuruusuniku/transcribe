@@ -20,3 +20,14 @@
 - デメリットへの対策：
   - Notion-Version: Notion の API 更新通知を購読するか、定期的に確認する（https://developers.notion.com/changelog）
   - エラーハンドリング・リトライ: 必要になったら `_call_with_retry()` と同じパターンで追加可能
+
+### GPU依存モジュールのテストについて
+- torch/torchaudio/demucs を使うテストは実行時に CUDA 初期化で固まる可能性がある
+- sys.modules への MagicMock 注入だけでは不十分な場合がある（torch 自体のインポートが引き金になる）
+- 新しいテストファイルは実装直後に以下を手動確認すること：
+  - `uv run pytest tests/test_新ファイル.py --collect-only`
+  - `uv run pytest tests/test_新ファイル.py -q --tb=short`
+- 固まった場合の判断フロー：
+  - collect-only で固まる → トップレベル import を疑う
+  - 収集は通るが実行で固まる → GPU初期化系なら pytest-timeout 導入を検討、それ以外はモックの差し替え先を確認
+- test_separator.py は現状 `--ignore=tests/test_separator.py` で除外して運用（凍結中）
