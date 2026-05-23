@@ -280,6 +280,7 @@ function App() {
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [logs, setLogs] = useState([]);
   const [activeCount, setActiveCount] = useState(0);
+  const [filterStatus, setFilterStatus] = useState('all');
   const wsRef = useRef(null);
 
   const fetchJobs = useCallback(async () => {
@@ -329,6 +330,8 @@ function App() {
     setLogs(prev => [...prev, msg]);
   }, []);
 
+  const filteredJobs = filterStatus === 'all' ? jobs : jobs.filter(j => j.status === filterStatus);
+
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <header className="app-header">
@@ -338,7 +341,18 @@ function App() {
       <main className="app-main">
         <aside className="sidebar">
           <div className="sidebar-header">ジョブ一覧 ({jobs.length})</div>
-          <JobList jobs={jobs} selectedId={selectedJobId} onSelect={setSelectedJobId} />
+          <div className="filter-row">
+            {['all', 'done', 'failed', 'queued'].map(s => (
+              <button
+                key={s}
+                className={`filter-btn${filterStatus === s ? ' active' : ''}`}
+                onClick={() => setFilterStatus(s)}
+              >
+                {s === 'all' ? 'すべて' : s}
+              </button>
+            ))}
+          </div>
+          <JobList jobs={filteredJobs} selectedId={selectedJobId} onSelect={setSelectedJobId} />
         </aside>
         <section className="main-content">
           <CommandPanel onTaskStart={handleTaskStart} onMessage={handleMessage} />
