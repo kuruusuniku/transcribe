@@ -460,6 +460,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [activeCount, setActiveCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showGlossary, setShowGlossary] = useState(false);
   const [logHeight, setLogHeight] = useState(200);
   const wsRef = useRef(null);
@@ -527,7 +528,16 @@ function App() {
     setLogs(prev => [...prev, msg]);
   }, []);
 
-  const filteredJobs = filterStatus === 'all' ? jobs : jobs.filter(j => j.status === filterStatus);
+  const filteredJobs = jobs
+    .filter(j => filterStatus === 'all' || j.status === filterStatus)
+    .filter(j => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        (j.title || '').toLowerCase().includes(q) ||
+        (j.url || '').toLowerCase().includes(q)
+      );
+    });
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -537,7 +547,23 @@ function App() {
       </header>
       <main className="app-main">
         <aside className="sidebar">
-          <div className="sidebar-header">ジョブ一覧 ({jobs.length})</div>
+          <div className="sidebar-header">ジョブ一覧 ({filteredJobs.length}/{jobs.length})</div>
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+            <input
+              style={{
+                width: '100%',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: '6px',
+                color: 'var(--text)',
+                padding: '4px 8px',
+                fontSize: '12px',
+              }}
+              placeholder="タイトル・URLで検索"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
           <div className="filter-row">
             {['all', 'done', 'failed', 'queued'].map(s => (
               <button
