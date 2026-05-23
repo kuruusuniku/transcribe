@@ -83,6 +83,27 @@ web:
   host: "127.0.0.1"   # 外部公開する場合は "0.0.0.0"（セキュリティリスクあり）
   port: 8000
 
+notion:
+  # Notion データベースへの自動同期（summary.md が存在するジョブのみ対象）
+  #
+  # 使い方:
+  #   1. Notion インテグレーションを作成: https://www.notion.so/my-integrations
+  #   2. token に "Internal Integration Secret" を設定
+  #   3. database_id に同期先 DB の ID を設定（URL の末尾 32 桁）
+  #   4. DB にインテグレーションを接続（DB ページの「...」→「接続」）
+  #   5. enabled: true に設定するとパイプライン完了時に自動実行
+  #
+  # DB に必要なプロパティ（名前・型）:
+  #   名前 (title), 日付 (date), URL (url), 動画時間 (number),
+  #   ソース種別 (select), まとめ進捗 (checkbox), タグ (multi_select)
+  #
+  # 手動実行: uv run transcribe sync-notion          （未同期のdoneジョブのみ）
+  #          uv run transcribe sync-notion --all
+  #          uv run transcribe sync-notion --id 13
+  enabled: false
+  token: ""             # Notion Internal Integration Secret
+  database_id: ""       # 同期先 DB の ID（32 桁英数字）
+
 summarize:
   # LLM による自動カスタムまとめ生成（KYOTA 式構造化まとめ）
   #

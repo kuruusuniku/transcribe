@@ -21,14 +21,17 @@ from .state import (
     get_all_jobs,
     get_job_by_id,
     get_job_by_url_or_id,
+    get_unnotion_synced_done_jobs,
     get_unsummarized_done_jobs,
     get_unsynced_done_jobs,
     init_db,
+    record_notion_synced,
     record_summarized,
     record_synced,
     reset_for_retry,
     reset_for_rerun,
 )
+from .notion_sync import sync_to_notion
 from .summarize import generate_summary
 from .sync import sync_job
 from .utils import ensure_dir
@@ -471,6 +474,76 @@ def summarize(
                 skip_count += 1
         except Exception as e:
             logger.error(f"[job {jid}] まとめ失敗: {e}")
+            console.print(f"  [red]✗[/red] job {jid}: {e}")
+            fail_count += 1
+
+    console.print(f"\n成功: {success_count}  スキップ: {skip_count}  失敗: {fail_count}")
+
+
+@app.command()
+def sync_notion(
+    all_jobs: bool = typer.Option(False, "--all", help="done ジョブを全件再同期（notion_synced_at を無視）"),
+    job_id: int | None = typer.Option(None, "--id", help="特定ジョブIDのみ処理"),
+) -> None:
+    """完了済みジョブの summary.md を Notion データベースに同期する"""
+    cfg, _ = _load_cfg_and_glossary()
+    logger = logging.getLogger(__name__)
+
+    if not cfg.notion.enabled:
+        console.print(
+            "[yellow]Notion 同期が無効です。[/yellow]\n"
+            "config.yaml で notion.enabled を true に設定してください。"
+        )
+        raise typer.Exit(0)
+
+    if not cfg.notion.token or not cfg.notion.database_id:
+        console.print(
+            "[yellow]Notion の token または database_id が未設定です。[/yellow]\n"
+            "config.yaml で notion.token と notion.database_id を設定してください。"
+        )
+        raise typer.Exit(0)
+
+    if job_id is not None:
+        job = get_job_by_id(cfg.state_db, job_id)
+        if job is None:
+            console.print(f"[red]ジョブ {job_id} が見つかりません[/red]")
+            raise typer.Exit(1)
+        if job["status"] != "done":
+            console.print(f"[yellow]ジョブ {job_id} は done 状態ではありません: {job['status']}[/yellow]")
+            raise typer.Exit(0)
+        jobs = [job]
+    elif all_jobs:
+        jobs = get_all_done_jobs(cfg.state_db)
+    else:
+        jobs = get_unnotion_synced_done_jobs(cfg.state_db)
+
+    if not jobs:
+        console.print("[yellow]同期対象のジョブがありません[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(f"[green]{len(jobs)} 件を Notion に同期します[/green]")
+
+    success_count = 0
+    skip_count = 0
+    fail_count = 0
+
+    for job in jobs:
+        jid = job["id"]
+        output_dir = Path(job["output_dir"]) if job["output_dir"] else None
+        if output_dir is None or not output_dir.exists():
+            logger.warning(f"[job {jid}] 出力ディレクトリなし、スキップ")
+            skip_count += 1
+            continue
+        try:
+            synced = sync_to_notion(output_dir, job["url"], cfg.notion)
+            if synced:
+                record_notion_synced(cfg.state_db, jid)
+                console.print(f"  [green]✓[/green] job {jid}: {job['title'] or job['url']}")
+                success_count += 1
+            else:
+                skip_count += 1
+        except Exception as e:
+            logger.error(f"[job {jid}] Notion 同期失敗: {e}")
             console.print(f"  [red]✗[/red] job {jid}: {e}")
             fail_count += 1
 

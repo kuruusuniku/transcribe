@@ -18,6 +18,7 @@ from .stages.transcriber import transcribe
 from .state import (
     get_pending_jobs,
     record_error,
+    record_notion_synced,
     record_summarized,
     record_synced,
     reset_for_retry,
@@ -241,6 +242,17 @@ def _run_job(
                 logger.info(f"[job {job_id}] Google Docs に同期完了")
         except Exception as e:
             logger.warning(f"[job {job_id}] Google Docs 同期失敗（文字起こしは完了済み）: {e}")
+
+    # Notion 自動同期
+    if cfg.notion.enabled and cfg.notion.database_id and cfg.notion.token:
+        try:
+            from .notion_sync import sync_to_notion
+            synced = sync_to_notion(job_output_dir, url, cfg.notion)
+            if synced:
+                record_notion_synced(db, job_id)
+                logger.info(f"[job {job_id}] Notion に同期完了")
+        except Exception as e:
+            logger.warning(f"[job {job_id}] Notion 同期失敗（文字起こしは完了済み）: {e}")
 
     # 一時ファイル掃除（分離済み音声のみ削除、元音声は保持）
     if audio_separation_used and audio_path != original_audio_path:

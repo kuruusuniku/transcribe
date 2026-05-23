@@ -98,6 +98,13 @@ class SummarizeConfig:
 
 
 @dataclass
+class NotionConfig:
+    enabled: bool = False
+    token: str = ""
+    database_id: str = ""
+
+
+@dataclass
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 8000
@@ -114,6 +121,7 @@ class AppConfig:
     logging: LoggingConfig
     google_docs: GoogleDocsConfig = field(default_factory=GoogleDocsConfig)
     summarize: SummarizeConfig = field(default_factory=SummarizeConfig)
+    notion: NotionConfig = field(default_factory=NotionConfig)
     web: WebConfig = field(default_factory=WebConfig)
 
     @property
@@ -226,6 +234,13 @@ def load_config(config_path: Path) -> AppConfig:
         temperature=sum_raw.get("temperature", 0.3),
     )
 
+    notion_raw = raw.get("notion", {})
+    notion = NotionConfig(
+        enabled=notion_raw.get("enabled", False),
+        token=notion_raw.get("token", ""),
+        database_id=notion_raw.get("database_id", ""),
+    )
+
     web_raw = raw.get("web", {})
     web = WebConfig(
         host=web_raw.get("host", "127.0.0.1"),
@@ -242,6 +257,7 @@ def load_config(config_path: Path) -> AppConfig:
         logging=log_cfg,
         google_docs=google_docs,
         summarize=summarize,
+        notion=notion,
         web=web,
     )
 
