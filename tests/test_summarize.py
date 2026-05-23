@@ -317,6 +317,7 @@ def test_call_gemini_503_sleep_called_with_correct_backoffs():
 def _install_fake_anthropic(text_response: str = "FAKE_CLAUDE", raise_exc: Exception | None = None):
     fake_content_block = MagicMock()
     fake_content_block.text = text_response
+    fake_content_block.type = "text"
 
     fake_message = MagicMock()
     fake_message.content = [fake_content_block]
@@ -384,6 +385,7 @@ def test_call_claude_503_retries_then_succeeds():
 
     fake_content = MagicMock()
     fake_content.text = "CLAUDE_RETRY_OK"
+    fake_content.type = "text"
     fake_message = MagicMock()
     fake_message.content = [fake_content]
 
@@ -424,6 +426,7 @@ def test_call_claude_503_retry_logs_warning(caplog):
 
     fake_content = MagicMock()
     fake_content.text = "OK"
+    fake_content.type = "text"
     fake_message = MagicMock()
     fake_message.content = [fake_content]
 

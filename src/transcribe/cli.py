@@ -21,6 +21,7 @@ from .state import (
     get_all_jobs,
     get_job_by_id,
     get_job_by_url_or_id,
+    get_source_type,
     get_unnotion_synced_done_jobs,
     get_unsummarized_done_jobs,
     get_unsynced_done_jobs,
@@ -294,7 +295,7 @@ def rerun(
             run_pipeline([url_or_id], cfg, glossary)
             return
 
-    source_type = job["source_type"] if "source_type" in job.keys() else "youtube"
+    source_type = get_source_type(job)
     if source_type == "local" and not Path(job["url"]).exists():
         console.print(
             f"[yellow]WARNING: ソースファイルが見つかりません: {job['url']}（スキップ）[/yellow]"
@@ -456,7 +457,7 @@ def summarize(
             skip_count += 1
             continue
 
-        source_type = job["source_type"] if "source_type" in job.keys() else "youtube"
+        source_type = get_source_type(job)
         try:
             summary_path = generate_summary(
                 output_dir=output_dir,
@@ -583,6 +584,10 @@ def delete(
         raise typer.Exit(1)
 
     output_dir = Path(job["output_dir"]) if job["output_dir"] else None
+
+    if files and output_dir is not None and output_dir.exists():
+        typer.confirm(f"出力ディレクトリ {output_dir} も削除しますか?", abort=True)
+
     delete_job(db, job_id)
     console.print(f"[green]ジョブ {job_id} を削除しました[/green]")
 
@@ -607,9 +612,11 @@ def clean() -> None:
         console.print("[yellow]削除対象ファイルなし[/yellow]")
         return
 
+    deleted = 0
     for f in files:
         if f.is_file():
             f.unlink()
             console.print(f"削除: {f.name}")
+            deleted += 1
 
-    console.print(f"[green]{len(files)} ファイルを削除しました[/green]")
+    console.print(f"[green]{deleted} ファイルを削除しました[/green]")

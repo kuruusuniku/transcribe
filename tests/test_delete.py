@@ -82,7 +82,7 @@ class TestDeleteCommand:
         update_status(db, j["id"], "done", output_dir=str(output_dir))
 
         with _mock_env(fake_cfg):
-            result = runner.invoke(app, ["delete", str(j["id"]), "--files"])
+            result = runner.invoke(app, ["delete", str(j["id"]), "--files"], input="y\n")
 
         assert result.exit_code == 0, result.output
         assert not output_dir.exists()

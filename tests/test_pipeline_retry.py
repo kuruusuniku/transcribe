@@ -73,13 +73,13 @@ class TestIsNonRetryable:
         assert is_non_retryable(FileNotFoundError("test")) is True
 
     def test_key_error(self):
-        assert is_non_retryable(KeyError("test")) is True
+        assert is_non_retryable(KeyError("test")) is False
 
     def test_attribute_error(self):
-        assert is_non_retryable(AttributeError("test")) is True
+        assert is_non_retryable(AttributeError("test")) is False
 
     def test_type_error(self):
-        assert is_non_retryable(TypeError("test")) is True
+        assert is_non_retryable(TypeError("test")) is False
 
     def test_runtime_error_torchaudio_backend(self):
         assert is_non_retryable(RuntimeError("Couldn't find appropriate backend for uri")) is True

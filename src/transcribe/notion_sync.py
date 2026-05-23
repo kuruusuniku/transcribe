@@ -154,14 +154,21 @@ def _clear_page_body(client, page_id: str) -> None:
 
 def _append_blocks_in_batches(client, page_id: str, blocks: list[dict]) -> None:
     for i in range(0, len(blocks), _BLOCKS_PER_REQUEST):
-        client.blocks.children.append(block_id=page_id, children=blocks[i : i + _BLOCKS_PER_REQUEST])
+        try:
+            client.blocks.children.append(block_id=page_id, children=blocks[i : i + _BLOCKS_PER_REQUEST])
+        except Exception:
+            end = min(i + _BLOCKS_PER_REQUEST, len(blocks)) - 1
+            logger.error(
+                f"blocks append 失敗 (page_id={page_id}, batch={i // _BLOCKS_PER_REQUEST + 1},"
+                f" blocks {i}–{end}/{len(blocks)})"
+            )
+            raise
 
 
 def _query_notion_db(cfg: NotionConfig, video_url: str) -> list[dict]:
     """URL で既存ページを検索する。503 は自動リトライ。"""
     backoffs = _NOTION_503_RETRY_BACKOFFS_SEC
     max_retries = len(backoffs)
-    resp = None
     for attempt in range(max_retries + 1):
         try:
             resp = httpx.post(
@@ -177,9 +184,7 @@ def _query_notion_db(cfg: NotionConfig, video_url: str) -> list[dict]:
             resp.raise_for_status()
             return resp.json().get("results", [])
         except Exception as e:
-            is_503 = getattr(e, "status_code", None) == 503 or (
-                hasattr(resp, "status_code") and resp.status_code == 503
-            )
+            is_503 = isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 503
             if not is_503 or attempt >= max_retries:
                 raise
             wait = backoffs[attempt]
@@ -220,7 +225,14 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
         client.pages.update(page_id=existing_page_id, properties=props)
         _clear_page_body(client, existing_page_id)
         if blocks:
-            _append_blocks_in_batches(client, existing_page_id, blocks)
+            try:
+                _append_blocks_in_batches(client, existing_page_id, blocks)
+            except Exception:
+                logger.error(
+                    f"Notion ページが不完全な状態です。手動確認: "
+                    f"https://notion.so/{existing_page_id.replace('-', '')}"
+                )
+                raise
         logger.info(f"Notion ページを更新しました: {title} (id={existing_page_id})")
     else:
         first_batch = blocks[:_BLOCKS_PER_REQUEST]
@@ -231,7 +243,11 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
         )
         page_id = page["id"]
         if len(blocks) > _BLOCKS_PER_REQUEST:
-            _append_blocks_in_batches(client, page_id, blocks[_BLOCKS_PER_REQUEST:])
+            try:
+                _append_blocks_in_batches(client, page_id, blocks[_BLOCKS_PER_REQUEST:])
+            except Exception:
+                client.pages.update(page_id=page_id, archived=True)
+                raise
         logger.info(f"Notion ページを作成しました: {title} (id={page_id})")
 
     return True

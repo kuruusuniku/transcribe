@@ -168,13 +168,14 @@ def update_status(
         conn.execute(sql, values)
 
 
-def record_error(db_path: Path, job_id: int, message: str) -> None:
+def record_error(db_path: Path, job_id: int, message: str, *, increment_retry: bool = True) -> None:
+    retry_expr = "retry_count + 1" if increment_retry else "retry_count"
     with _connect(db_path) as conn:
         conn.execute(
-            """UPDATE jobs
+            f"""UPDATE jobs
                SET status = 'failed',
                    error_message = ?,
-                   retry_count = retry_count + 1,
+                   retry_count = {retry_expr},
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = ?""",
             (message, job_id),
@@ -257,3 +258,11 @@ def record_notion_synced(db_path: Path, job_id: int) -> None:
 def delete_job(db_path: Path, job_id: int) -> None:
     with _connect(db_path) as conn:
         conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+
+
+def get_source_type(job) -> str:
+    """sqlite3.Row または dict から source_type を安全に取得する。"""
+    try:
+        return job["source_type"] or "youtube"
+    except (KeyError, IndexError):
+        return "youtube"

@@ -243,7 +243,8 @@ def call_claude(
         )
         if not message.content:
             return ""
-        return message.content[0].text
+        texts = [b.text for b in message.content if b.type == "text"]
+        return "\n".join(texts)
 
     return _call_with_retry(_invoke, "Claude", _CLAUDE_503_RETRY_BACKOFFS_SEC)
 

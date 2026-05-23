@@ -17,6 +17,7 @@ from .stages.separator import separate_audio
 from .stages.transcriber import transcribe
 from .state import (
     get_pending_jobs,
+    get_source_type,
     record_error,
     record_notion_synced,
     record_summarized,
@@ -37,9 +38,6 @@ NON_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     yt_dlp.utils.UnsupportedError,
     FileNotFoundError,
     PermissionError,
-    KeyError,
-    AttributeError,
-    TypeError,
 )
 
 NON_RETRYABLE_MESSAGE_PATTERNS: tuple[str, ...] = (
@@ -114,7 +112,7 @@ def run_pipeline(
         retry_count: int = job["retry_count"]
         max_attempts = cfg.retry.max_attempts
 
-        source_type: str = job["source_type"] if "source_type" in job.keys() else "youtube"
+        source_type: str = get_source_type(job)
         logger.info(f"[job {job_id}] 開始: {url} (source_type={source_type})")
 
         success = False
@@ -137,7 +135,7 @@ def run_pipeline(
                     logger.error(f"[job {job_id}] リトライ不可能なエラーを検出: {type(e).__name__}")
                     logger.error(f"[job {job_id}] エラー内容: {e}")
                     logger.error(f"[job {job_id}] このエラーはリトライしても解決しないため、即時 failed として記録します")
-                    record_error(db, job_id, err_msg)
+                    record_error(db, job_id, err_msg, increment_retry=False)
                     non_retryable_hit = True
                     break
                 elif attempt + 1 >= max_attempts:
