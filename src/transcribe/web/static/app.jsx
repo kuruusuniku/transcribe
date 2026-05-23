@@ -463,7 +463,16 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showGlossary, setShowGlossary] = useState(false);
   const [logHeight, setLogHeight] = useState(200);
+  const [darkMode, setDarkMode] = useState(true);
   const wsRef = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : '');
+  }, [darkMode]);
 
   const onDragStart = (e) => {
   e.preventDefault();
@@ -544,6 +553,12 @@ function App() {
       <header className="app-header">
         <h1>transcribe Web UI</h1>
         {activeCount > 0 && <span className="running-badge">実行中: {activeCount}</span>}
+        <button
+          onClick={() => setDarkMode(d => !d)}
+          style={{ marginLeft: 'auto', fontSize: '16px', padding: '4px 8px', background: 'none', border: 'none' }}
+        >
+          {darkMode ? '☀️' : '🌙'}
+        </button>
       </header>
       <main className="app-main">
         <aside className="sidebar">
