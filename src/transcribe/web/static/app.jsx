@@ -62,7 +62,7 @@ function LogViewer({ logs }) {
   );
 }
 
-function JobDetail({ jobId, onClose }) {
+function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
   const [job, setJob] = useState(null);
   const [fileContent, setFileContent] = useState(null);
   const [fileType, setFileType] = useState(null);
@@ -75,6 +75,30 @@ function JobDetail({ jobId, onClose }) {
     if (!jobId) return;
     fetch(`/api/jobs/${jobId}`).then(r => r.json()).then(setJob);
   }, [jobId]);
+
+  const postJson = async (endpoint, body) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        onMessage(`[エラー] ${endpoint}: ${err}`);
+        return null;
+      }
+      const data = await res.json();
+      onTaskStart(data.task_id);
+      return data;
+    } catch (e) {
+      onMessage(`[エラー] ${e.message}`);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const showFile = async (type) => {
     if (loading) return;
@@ -104,6 +128,16 @@ function JobDetail({ jobId, onClose }) {
         <div className="detail-actions">
           <button onClick={() => showFile('transcript')} disabled={loading}>transcript</button>
           <button onClick={() => showFile('summary')} disabled={loading}>summary</button>
+          <button onClick={async () => {
+            const ok = await postJson('rerun', { url_or_id: String(jobId) });
+            if (ok) onClose();
+          }} disabled={loading}>rerun</button>
+          <button onClick={() => postJson('retry', { job_id: jobId })} disabled={loading}>retry</button>
+          <button onClick={async () => {
+            if (!window.confirm(`ジョブ #${jobId} を削除しますか？`)) return;
+            const ok = await postJson('delete', { job_id: jobId, files: false });
+            if (ok) { onClose(); onRefresh(); }
+          }} disabled={loading}>delete</button>
           <button onClick={onClose}>✕</button>
         </div>
       </div>
@@ -198,6 +232,8 @@ function CommandPanel({ onTaskStart, onMessage }) {
         <button onClick={() => postJson('sync', { all: true })} disabled={loading}>全件同期</button>
         <button onClick={() => postJson('summarize', { all: false })} disabled={loading}>未まとめをまとめ</button>
         <button onClick={() => postJson('summarize', { all: true })} disabled={loading}>全件まとめ</button>
+        <button onClick={() => postJson('sync-notion', { all: false })} disabled={loading}>未Notion同期</button>
+        <button onClick={() => postJson('sync-notion', { all: true })} disabled={loading}>全件Notion同期</button>
       </div>
     </div>
   );
@@ -275,6 +311,9 @@ function App() {
             <JobDetail
               jobId={selectedJobId}
               onClose={() => setSelectedJobId(null)}
+              onTaskStart={handleTaskStart}
+              onMessage={handleMessage}
+              onRefresh={fetchJobs}
             />
           )}
         </section>

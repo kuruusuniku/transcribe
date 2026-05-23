@@ -75,3 +75,44 @@ async def rerun_job(body: RerunBody, cfg: ConfigDep):
     cmd = transcribe_cmd("rerun", body.url_or_id, "--yes")
     task_id = start_task(cmd)
     return {"task_id": task_id}
+
+
+class RetryBody(BaseModel):
+    job_id: int
+
+
+class DeleteBody(BaseModel):
+    job_id: int
+    files: bool = False
+
+
+class SyncNotionBody(BaseModel):
+    all: bool = False
+    job_id: int | None = None
+
+
+@router.post("/retry")
+async def retry_job(body: RetryBody):
+    cmd = transcribe_cmd("retry", str(body.job_id))
+    task_id = start_task(cmd)
+    return {"task_id": task_id}
+
+
+@router.post("/delete")
+async def delete_job(body: DeleteBody):
+    cmd = transcribe_cmd("delete", str(body.job_id))
+    if body.files:
+        cmd.append("--files")
+    task_id = start_task(cmd)
+    return {"task_id": task_id}
+
+
+@router.post("/sync-notion")
+async def sync_notion_jobs(body: SyncNotionBody):
+    cmd = transcribe_cmd("sync-notion")
+    if body.all:
+        cmd.append("--all")
+    if body.job_id is not None:
+        cmd += ["--id", str(body.job_id)]
+    task_id = start_task(cmd)
+    return {"task_id": task_id}
