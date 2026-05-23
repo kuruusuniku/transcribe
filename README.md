@@ -29,6 +29,13 @@ YouTube 限定公開動画・ローカル音声ファイルの自動文字起こ
 - `config.yaml` の `summarize.gemini_api_key` に設定（または環境変数 `GEMINI_API_KEY`）
 - フォールバック用 Claude API キー（任意）: https://console.anthropic.com/
 
+### Notion 連携（任意）
+
+1. Notion でインテグレーション作成 → トークン取得: https://www.notion.so/my-integrations
+2. Notion にデータベース作成 → インテグレーションを接続 → データベース ID を取得
+3. `config.yaml` の `notion.token` と `notion.database_id` に設定
+4. `notion.enabled: true` に設定
+
 ## コマンド一覧
 
 | コマンド | 説明 |
@@ -39,8 +46,18 @@ YouTube 限定公開動画・ローカル音声ファイルの自動文字起こ
 | `transcribe summarize [--all \| --id N]` | LLM まとめ生成 |
 | `transcribe sync [--all]` | Google Docs 同期 |
 | `transcribe rerun <url_or_id>` | 完了済みジョブの再実行 |
+| `transcribe retry <id>` | 失敗ジョブを手動でリトライ |
+| `transcribe delete <id> [--files]` | ジョブを DB から削除（`--files` で出力ディレクトリも削除、確認あり） |
+| `transcribe sync-notion [--all \| --id N]` | Notion データベースに同期 |
+| `transcribe web [--host] [--port]` | Web UI を起動（http://localhost:8000） |
 | `transcribe status` | ジョブ一覧表示 |
 | `transcribe clean` | 一時ファイル削除 |
+
+### Web UI
+
+`uv run transcribe web` で http://localhost:8000 を起動。
+ブラウザから全コマンドを操作でき、ログをリアルタイムで確認できる。
+mp3/m4a のアップロードや transcript.md / summary.md のインライン閲覧も可能。
 
 ## 運用フロー
 
@@ -56,6 +73,17 @@ YouTube 限定公開動画・ローカル音声ファイルの自動文字起こ
 - mp3: `uv run transcribe file path/to/audio.mp3`
 - m4a: `uv run transcribe file path/to/audio.m4a`
 - m4a を mp3 に変換したい場合: `uv run transcribe convert path/to/audio.m4a`
+
+### 失敗したジョブの対処
+
+- `uv run transcribe status` で failed を確認
+- `uv run transcribe retry <id>` で手動リトライ
+- 解決しない場合は `uv run transcribe rerun <id>` で最初から再実行
+
+### 不要なジョブの削除
+
+- `uv run transcribe delete <id>` で DB レコードのみ削除
+- `uv run transcribe delete <id> --files` で出力ディレクトリも含めて削除（確認プロンプトあり）
 
 ## 運用上の注意点
 
