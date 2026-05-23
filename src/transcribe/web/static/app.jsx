@@ -40,7 +40,7 @@ function JobList({ jobs, selectedId, onSelect }) {
   );
 }
 
-function LogViewer({ logs }) {
+function LogViewer({ logs, height = 200 }) {
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -48,11 +48,11 @@ function LogViewer({ logs }) {
   }, [logs]);
 
   if (logs.length === 0) {
-    return <div className="log-viewer"><span className="log-empty">コマンドを実行するとログがここに表示されます</span></div>;
+    return <div className="log-viewer" style={{ height: `${height}px`, overflowY: 'auto', flex: 'none' }}><span className="log-empty">コマンドを実行するとログがここに表示されます</span></div>;
   }
 
   return (
-    <div className="log-viewer">
+    <div className="log-viewer" style={{ height: `${height}px`, overflowY: 'auto', flex: 'none' }}>
       {logs.map((line, i) => {
         const cls = line.startsWith('[完了') ? ' done' : line.startsWith('[ERROR') ? ' error' : '';
         return <div key={i} className={`log-line${cls}`}>{line}</div>;
@@ -186,6 +186,148 @@ function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
   );
 }
 
+function GlossaryEditor({ onClose }) {
+  const [data, setData] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [newSub, setNewSub] = useState({ pattern: '', replacement: '', type: 'literal' });
+  const [newTerm, setNewTerm] = useState('');
+
+  useEffect(() => {
+    fetch('/api/glossary').then(r => r.json()).then(setData);
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await fetch('/api/glossary', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateSub = (i, field, value) => {
+    setData(d => {
+      const subs = [...d.substitutions];
+      subs[i] = { ...subs[i], [field]: value };
+      return { ...d, substitutions: subs };
+    });
+  };
+
+  const removeSub = (i) => {
+    setData(d => ({ ...d, substitutions: d.substitutions.filter((_, idx) => idx !== i) }));
+  };
+
+  const addSub = () => {
+    if (!newSub.pattern) return;
+    setData(d => ({ ...d, substitutions: [{ ...newSub }, ...d.substitutions] }));
+    setNewSub({ pattern: '', replacement: '', type: 'literal' });
+  };
+
+  const removeTerm = (i) => {
+    setData(d => ({ ...d, important_terms: d.important_terms.filter((_, idx) => idx !== i) }));
+  };
+
+  const addTerm = () => {
+    if (!newTerm.trim()) return;
+    setData(d => ({ ...d, important_terms: [newTerm.trim(), ...d.important_terms] }));
+    setNewTerm('');
+  };
+
+  if (!data) return <div style={{ padding: '16px' }}>読み込み中...</div>;
+
+  const inputStyle = { background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', padding: '3px 6px', fontSize: '12px' };
+  const btnStyle = { fontSize: '12px', padding: '3px 8px', cursor: 'pointer' };
+
+  return (
+    <div style={{ padding: '12px', overflowY: 'auto', flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+        <button style={btnStyle} onClick={onClose}>用語辞書を閉じる</button>
+        <button style={{ ...btnStyle, background: 'var(--accent, #388bfd)', color: '#fff' }} onClick={save} disabled={saving}>
+          {saving ? '保存中...' : '保存'}
+        </button>
+      </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>コンテキスト (initial_prompt)</label>
+        <textarea
+          style={{ ...inputStyle, width: '100%', minHeight: '60px', resize: 'vertical', boxSizing: 'border-box' }}
+          value={data.context}
+          onChange={e => setData(d => ({ ...d, context: e.target.value }))}
+        />
+      </div>
+
+      <h3 style={{ fontSize: '13px', marginBottom: '6px' }}>誤認識パターン（substitutions）</h3>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', flexWrap: 'wrap' }}>
+        <input style={{ ...inputStyle, flex: 1 }} placeholder="パターン" value={newSub.pattern} onChange={e => setNewSub(s => ({ ...s, pattern: e.target.value }))} />
+        <input style={{ ...inputStyle, flex: 1 }} placeholder="置換後" value={newSub.replacement} onChange={e => setNewSub(s => ({ ...s, replacement: e.target.value }))} />
+        <select style={inputStyle} value={newSub.type} onChange={e => setNewSub(s => ({ ...s, type: e.target.value }))}>
+          <option value="literal">literal</option>
+          <option value="regex">regex</option>
+        </select>
+        <button style={btnStyle} onClick={addSub}>追加</button>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '16px' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+            <th style={{ textAlign: 'left', padding: '4px 6px' }}>パターン</th>
+            <th style={{ textAlign: 'left', padding: '4px 6px' }}>置換後</th>
+            <th style={{ textAlign: 'left', padding: '4px 6px' }}>種別</th>
+            <th style={{ padding: '4px 6px' }}>削除</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.substitutions.map((s, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '2px 4px' }}>
+                <input style={{ ...inputStyle, width: '100%' }} value={s.pattern} onChange={e => updateSub(i, 'pattern', e.target.value)} />
+              </td>
+              <td style={{ padding: '2px 4px' }}>
+                <input style={{ ...inputStyle, width: '100%' }} value={s.replacement} onChange={e => updateSub(i, 'replacement', e.target.value)} />
+              </td>
+              <td style={{ padding: '2px 4px' }}>
+                <select style={inputStyle} value={s.type} onChange={e => updateSub(i, 'type', e.target.value)}>
+                  <option value="literal">literal</option>
+                  <option value="regex">regex</option>
+                </select>
+              </td>
+              <td style={{ padding: '2px 4px', textAlign: 'center' }}>
+                <button style={btnStyle} onClick={() => removeSub(i)}>×</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3 style={{ fontSize: '13px', marginBottom: '6px' }}>重要語リスト（important_terms）</h3>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+        <input
+          style={{ ...inputStyle, flex: 1 }}
+          placeholder="重要語を追加"
+          value={newTerm}
+          onChange={e => setNewTerm(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') addTerm(); }}
+        />
+        <button style={btnStyle} onClick={addTerm}>追加</button>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+        {data.important_terms.map((term, i) => (
+          <span key={i} style={{ background: 'var(--border)', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            {term}
+            <button
+              onClick={() => removeTerm(i)}
+              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0', fontSize: '11px', lineHeight: 1 }}
+            >×</button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CommandPanel({ onTaskStart, onMessage }) {
   const [urls, setUrls] = useState('');
   const [loading, setLoading] = useState(false);
@@ -281,7 +423,25 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [activeCount, setActiveCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [showGlossary, setShowGlossary] = useState(false);
+  const [logHeight, setLogHeight] = useState(200);
   const wsRef = useRef(null);
+
+  const onDragStart = (e) => {
+  e.preventDefault();
+  const startY = e.clientY;
+  const startH = logHeight;
+  const onMove = (ev) => {
+    const delta = ev.clientY - startY;
+    setLogHeight(Math.max(60, Math.min(600, startH - delta)));
+  };
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+};
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -355,8 +515,29 @@ function App() {
           <JobList jobs={filteredJobs} selectedId={selectedJobId} onSelect={setSelectedJobId} />
         </aside>
         <section className="main-content">
-          <CommandPanel onTaskStart={handleTaskStart} onMessage={handleMessage} />
-          <LogViewer logs={logs} />
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <button
+              onClick={() => setShowGlossary(g => !g)}
+              style={{ margin: '8px 8px 0', fontSize: '12px' }}
+            >
+              用語辞書を編集
+            </button>
+            {showGlossary
+              ? <GlossaryEditor onClose={() => setShowGlossary(false)} />
+              : <CommandPanel onTaskStart={handleTaskStart} onMessage={handleMessage} />
+            }
+          </div>
+          <div
+            onMouseDown={onDragStart}
+            style={{
+              height: '6px',
+              cursor: 'row-resize',
+              background: 'var(--border)',
+              flexShrink: 0,
+              margin: '4px 0',
+            }}
+          />
+          <LogViewer logs={logs} height={logHeight} />
           {selectedJobId && (
             <JobDetail
               jobId={selectedJobId}

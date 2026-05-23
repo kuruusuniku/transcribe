@@ -1,191 +1,411 @@
-# 1. Whisperのinitial_promptに注入される語彙ヒント
-#    ※ initial_promptは244トークンが上限。長すぎる場合は冒頭から切り詰められる
-context: |
-  武術・身体技法の稽古指導。頻出語:
+context: '武術・身体技法の稽古指導。頻出語:
+
   臍下丹田、中丹田、中足靭帯、鼠径部、蹲踞面、閉じ蹲踞、開き蹲踞、中蹲踞、肘締めコンパス、ヒップヒンジ、キネティックチェーン、ボディヒアリング、ローアクセル、ハイアクセル、内反小趾、仮骨、体癖、陰練、足裏球体、スネO脚、ボディボイス、ジジイメソッド、蹲踞
 
-# 2. 後処理での置換ルール（誤認識パターン → 正しい表記）
-#    type: literal は単純置換、regex は正規表現
+  '
 substitutions:
-  # 例:
-  # - pattern: "せいか丹田"
-  #   replacement: "臍下丹田"
-  #   type: literal
-
-  # 人物・固有名詞
-  - {pattern: "穴あば", replacement: "あなぁ〜ば", type: literal}
-  - {pattern: "穴あばさん", replacement: "あなぁ〜ばさん", type: literal}
-  
-  # 用語誤認識
-  - {pattern: "お声センター", replacement: "おパイセン", type: literal}
-  - {pattern: "おぱいセンター氏", replacement: "おパイセン", type: literal}
-  - {pattern: "おぱいセンター", replacement: "おパイセン", type: literal}
-  - {pattern: "足下痛", replacement: "朝活", type: literal}
-  - {pattern: "ウソギトビウォーク", replacement: "うさぎ跳びウォーク", type: literal}
-  - {pattern: "ウソギ", replacement: "うさぎ", type: literal}
-  - {pattern: "バンセット", replacement: "股関節", type: literal}
-  - {pattern: "バンテッド", replacement: "股関節", type: literal}
-  - {pattern: "バンセンス", replacement: "股関節", type: literal}
-  - {pattern: "サカツ", replacement: "朝活", type: literal}
-  - {pattern: "体液なんです", replacement: "体癖なんです", type: literal}
-  - {pattern: "それが体液", replacement: "それが体癖", type: literal}
-  - {pattern: "体液", replacement: "体癖", type: regex}
-  - {pattern: "鎌切りストレッチ", replacement: "カマキリストレッチ", type: literal}
-  - {pattern: "鎌切り", replacement: "カマキリ", type: literal}
-  - {pattern: "中足忍耐", replacement: "中足靭帯", type: literal}
-  - {pattern: "中足全体", replacement: "中足靭帯", type: literal}
-  - {pattern: "内反照子", replacement: "内反小趾", type: literal}
-  - {pattern: "下骨", replacement: "仮骨", type: literal}
-  - {pattern: "HIGH AXEL", replacement: "ハイアクセル", type: literal}
-  - {pattern: "HIGH LEVEL", replacement: "ハイレベル", type: literal}
-  - {pattern: "ハイアクセル", replacement: "ハイアクセル", type: literal}  # 念のため統一
-  - {pattern: "バイシャツ", replacement: "自己解釈", type: literal}
-  - {pattern: "ひもむしウォーク", replacement: "イモムシウォーク", type: literal}
-  - {pattern: "肯定ペンギン", replacement: "皇帝ペンギン", type: literal}
-  - {pattern: "後手ペンギン", replacement: "皇帝ペンギン", type: literal}
-  - {pattern: "後手ペンギングウォーク", replacement: "皇帝ペンギンウォーク", type: literal}
-  - {pattern: "ポーテンペイビングウォーク", replacement: "皇帝ペンギンウォーク", type: literal}
-  - {pattern: "内反小腰", replacement: "内反小趾", type: literal}
-  - {pattern: "外反腰", replacement: "外反母趾", type: literal}
-  - {pattern: "ソンピョメント", replacement: "蹲踞面", type: literal}
-  - {pattern: "即興面", replacement: "蹲踞面", type: literal}
-  - {pattern: "ゴーテックストレッチ", replacement: "動的ストレッチ", type: literal}
-  - {pattern: "言語速報", replacement: "言語束縛", type: literal}
-  - {pattern: "アラインベッド", replacement: "アラインメント", type: literal}
-  - {pattern: "ボツリング", replacement: "没入", type: literal}
-  - {pattern: "時計棒", replacement: "鼠径部", type: literal}
-  - {pattern: "そけい棒", replacement: "鼠径部", type: literal}
-  - {pattern: "ビーストモーク", replacement: "ビーストウォーク", type: literal}
-  - {pattern: "鎌切りストレッチ", replacement: "カマキリストレッチ", type: literal}
-  - {pattern: "鎌切り", replacement: "カマキリ", type: literal}
-  - {pattern: "若マス", replacement: "若松", type: literal}
-  - {pattern: "損去面", replacement: "蹲踞面", type: literal}
-  - {pattern: "尊鏡面", replacement: "蹲踞面", type: literal}
-  - {pattern: "中足忍体", replacement: "中足靭帯", type: literal}
-  - {pattern: "中毒人体", replacement: "中足靱帯", type: literal}
-  - {pattern: "コーテーペンギン", replacement: "皇帝ペンギン", type: literal}
-  - {pattern: "ベストフォーク", replacement: "ビーストウォーク", type: literal}
-  - {pattern: "ウエスト", replacement: "ビースト", type: literal}
-  - {pattern: "トリウムウォーク", replacement: "トリウォーク", type: literal}
-  - {pattern: "ツルオーク", replacement: "ツルウォーク", type: literal}
-  - {pattern: "ヒットウォーク", replacement: "キリンウォーク", type: literal}
-  - {pattern: "アニマルスロー", replacement: "アニマルフロー", type: literal}
-  - {pattern: "腐臭", replacement: "復習", type: literal}
-  - {pattern: "スネルヴ", replacement: "スネデブ", type: literal}
-  - {pattern: "スネディング", replacement: "スネデブ", type: literal}
-  - {pattern: "スネ横脚", replacement: "スネO脚", type: literal}
-  - {pattern: "シュハリ", replacement: "守破離", type: literal}
-  - {pattern: "横脚", replacement: "O脚", type: literal}
-  - {pattern: "肥骨", replacement: "腓骨", type: literal}
-  - {pattern: "頭骨", replacement: "橈骨", type: literal}
-  - {pattern: "側球", replacement: "足弓", type: literal}
-  - {pattern: "足球", replacement: "足弓", type: literal}
-  - {pattern: "買えない買えない", replacement: "回内回外", type: literal}
-  - {pattern: "果汁", replacement: "荷重", type: literal}
-  - {pattern: "脱力微動力", replacement: "脱力美努力", type: literal}
-  - {pattern: "エッジ", replacement: "叡智", type: literal}
-  - {pattern: "人事課", replacement: "自因自果", type: literal}
-  - {pattern: "答え", replacement: "交代", type: literal}
-  - {pattern: "雲", replacement: "蜘蛛", type: literal}
-  - {pattern: "苦悩", replacement: "蜘蛛", type: literal}
-  - {pattern: "OKです、答え", replacement: "OKです、交代", type: literal}
-  - {pattern: "OKです 答え", replacement: "OKです 交代", type: literal} 
-  - {pattern: "中尊挙", replacement: "中蹲踞", type: literal}
-  - {pattern: "時計部", replacement: "鼠径部", type: literal}
-  - {pattern: "処刑部", replacement: "鼠径部", type: literal}
-  - {pattern: "固定ペンギンフォーク", replacement: "皇帝ペンギンウォーク", type: literal}
-  - {pattern: "内反射手", replacement: "内反小趾", type: literal}
-  - {pattern: "カナケイストレッチ", replacement: "カマキリストレッチ", type: literal}
-  - {pattern: "アニマーショー", replacement: "アニマルフロー", type: literal}
-  - {pattern: "スネレム", replacement: "スネデブ", type: literal}
-  - {pattern: "足レム", replacement: "足デブ", type: literal}
-  - {pattern: "自陣迷走区", replacement: "ジジイメソッド", type: literal}
-  - {pattern: "脇突然拠筋", replacement: "脇と前鋸筋", type: literal}
-  - {pattern: "肩骨骨", replacement: "肩甲骨", type: literal}
-  - {pattern: "肩んで", replacement: "下丹田", type: literal}
-  - {pattern: "唾液ダンス", replacement: "体癖ダンス", type: literal}
-  - {pattern: "思考合図", replacement: "知行合一", type: literal}
-  - {pattern: "サンデートリズム", replacement: "三点倒立", type: literal}
-  - {pattern: "素形部", replacement: "鼠径部", type: literal}
-  - {pattern: "素形度", replacement: "鼠径部", type: literal}
-  - {pattern: "初形部", replacement: "鼠径部", type: literal}
-  - {pattern: "そばねち", replacement: "鼠径部", type: literal}
-  - {pattern: "ステール", replacement: "鼠径部", type: literal}
-  - {pattern: "初期エグ", replacement: "鼠径部", type: literal}
-  - {pattern: "タンディング", replacement: "丹田", type: literal}
-  - {pattern: "静か断電", replacement: "臍下丹田", type: literal}
-  - {pattern: "背下断線", replacement: "臍下丹田", type: literal}
-  - {pattern: "中足人体", replacement: "中足靭帯", type: literal}
-  - {pattern: "海内海外", replacement: "回内回外", type: literal}
-  - {pattern: "内線できない", replacement: "内旋できない", type: literal}
-  - {pattern: "飛球", replacement: "腓骨", type: literal}
-  - {pattern: "脱瘍", replacement: "蹲踞", type: literal}
-  - {pattern: "肩面", replacement: "下丹田", type: literal}
-  - {pattern: "速球中の一色", replacement: "初級中の初級", type: literal}
-  - {pattern: "両手して", replacement: "病気して", type: literal}
-  - {pattern: "照明粉どう", replacement: "小便小僧", type: literal}
-  - {pattern: "バリーナ", replacement: "バレリーナ", type: literal}
-  - {pattern: "バニー", replacement: "ワニ", type: literal}
-  - {pattern: "開配", replacement: "開閉", type: literal}
-  - {pattern: "トマネチ", replacement: "コマネチ", type: literal}
-  - {pattern: "ボディボー", replacement: "ボディボイス", type: literal}
-  - {pattern: "行けです", replacement: "OKです", type: literal}
-
-# 3. 重要語リスト（信頼度判定の参考に使用）
+- pattern: 穴あば
+  replacement: あなぁ〜ば
+  type: literal
+- pattern: 穴あばさん
+  replacement: あなぁ〜ばさん
+  type: literal
+- pattern: お声センター
+  replacement: おパイセン
+  type: literal
+- pattern: おぱいセンター氏
+  replacement: おパイセン
+  type: literal
+- pattern: おぱいセンター
+  replacement: おパイセン
+  type: literal
+- pattern: 足下痛
+  replacement: 朝活
+  type: literal
+- pattern: ウソギトビウォーク
+  replacement: うさぎ跳びウォーク
+  type: literal
+- pattern: ウソギ
+  replacement: うさぎ
+  type: literal
+- pattern: バンセット
+  replacement: 股関節
+  type: literal
+- pattern: バンテッド
+  replacement: 股関節
+  type: literal
+- pattern: バンセンス
+  replacement: 股関節
+  type: literal
+- pattern: サカツ
+  replacement: 朝活
+  type: literal
+- pattern: 体液なんです
+  replacement: 体癖なんです
+  type: literal
+- pattern: それが体液
+  replacement: それが体癖
+  type: literal
+- pattern: 体液
+  replacement: 体癖
+  type: regex
+- pattern: 鎌切りストレッチ
+  replacement: カマキリストレッチ
+  type: literal
+- pattern: 鎌切り
+  replacement: カマキリ
+  type: literal
+- pattern: 中足忍耐
+  replacement: 中足靭帯
+  type: literal
+- pattern: 中足全体
+  replacement: 中足靭帯
+  type: literal
+- pattern: 内反照子
+  replacement: 内反小趾
+  type: literal
+- pattern: 下骨
+  replacement: 仮骨
+  type: literal
+- pattern: HIGH AXEL
+  replacement: ハイアクセル
+  type: literal
+- pattern: HIGH LEVEL
+  replacement: ハイレベル
+  type: literal
+- pattern: ハイアクセル
+  replacement: ハイアクセル
+  type: literal
+- pattern: バイシャツ
+  replacement: 自己解釈
+  type: literal
+- pattern: ひもむしウォーク
+  replacement: イモムシウォーク
+  type: literal
+- pattern: 肯定ペンギン
+  replacement: 皇帝ペンギン
+  type: literal
+- pattern: 後手ペンギン
+  replacement: 皇帝ペンギン
+  type: literal
+- pattern: 後手ペンギングウォーク
+  replacement: 皇帝ペンギンウォーク
+  type: literal
+- pattern: ポーテンペイビングウォーク
+  replacement: 皇帝ペンギンウォーク
+  type: literal
+- pattern: 内反小腰
+  replacement: 内反小趾
+  type: literal
+- pattern: 外反腰
+  replacement: 外反母趾
+  type: literal
+- pattern: ソンピョメント
+  replacement: 蹲踞面
+  type: literal
+- pattern: 即興面
+  replacement: 蹲踞面
+  type: literal
+- pattern: ゴーテックストレッチ
+  replacement: 動的ストレッチ
+  type: literal
+- pattern: 言語速報
+  replacement: 言語束縛
+  type: literal
+- pattern: アラインベッド
+  replacement: アラインメント
+  type: literal
+- pattern: ボツリング
+  replacement: 没入
+  type: literal
+- pattern: 時計棒
+  replacement: 鼠径部
+  type: literal
+- pattern: そけい棒
+  replacement: 鼠径部
+  type: literal
+- pattern: ビーストモーク
+  replacement: ビーストウォーク
+  type: literal
+- pattern: 鎌切りストレッチ
+  replacement: カマキリストレッチ
+  type: literal
+- pattern: 鎌切り
+  replacement: カマキリ
+  type: literal
+- pattern: 若マス
+  replacement: 若松
+  type: literal
+- pattern: 損去面
+  replacement: 蹲踞面
+  type: literal
+- pattern: 尊鏡面
+  replacement: 蹲踞面
+  type: literal
+- pattern: 中足忍体
+  replacement: 中足靭帯
+  type: literal
+- pattern: 中毒人体
+  replacement: 中足靱帯
+  type: literal
+- pattern: コーテーペンギン
+  replacement: 皇帝ペンギン
+  type: literal
+- pattern: ベストフォーク
+  replacement: ビーストウォーク
+  type: literal
+- pattern: ウエスト
+  replacement: ビースト
+  type: literal
+- pattern: トリウムウォーク
+  replacement: トリウォーク
+  type: literal
+- pattern: ツルオーク
+  replacement: ツルウォーク
+  type: literal
+- pattern: ヒットウォーク
+  replacement: キリンウォーク
+  type: literal
+- pattern: アニマルスロー
+  replacement: アニマルフロー
+  type: literal
+- pattern: 腐臭
+  replacement: 復習
+  type: literal
+- pattern: スネルヴ
+  replacement: スネデブ
+  type: literal
+- pattern: スネディング
+  replacement: スネデブ
+  type: literal
+- pattern: スネ横脚
+  replacement: スネO脚
+  type: literal
+- pattern: シュハリ
+  replacement: 守破離
+  type: literal
+- pattern: 横脚
+  replacement: O脚
+  type: literal
+- pattern: 肥骨
+  replacement: 腓骨
+  type: literal
+- pattern: 頭骨
+  replacement: 橈骨
+  type: literal
+- pattern: 側球
+  replacement: 足弓
+  type: literal
+- pattern: 足球
+  replacement: 足弓
+  type: literal
+- pattern: 買えない買えない
+  replacement: 回内回外
+  type: literal
+- pattern: 果汁
+  replacement: 荷重
+  type: literal
+- pattern: 脱力微動力
+  replacement: 脱力美努力
+  type: literal
+- pattern: エッジ
+  replacement: 叡智
+  type: literal
+- pattern: 人事課
+  replacement: 自因自果
+  type: literal
+- pattern: 答え
+  replacement: 交代
+  type: literal
+- pattern: 雲
+  replacement: 蜘蛛
+  type: literal
+- pattern: 苦悩
+  replacement: 蜘蛛
+  type: literal
+- pattern: OKです、答え
+  replacement: OKです、交代
+  type: literal
+- pattern: OKです 答え
+  replacement: OKです 交代
+  type: literal
+- pattern: 中尊挙
+  replacement: 中蹲踞
+  type: literal
+- pattern: 時計部
+  replacement: 鼠径部
+  type: literal
+- pattern: 処刑部
+  replacement: 鼠径部
+  type: literal
+- pattern: 固定ペンギンフォーク
+  replacement: 皇帝ペンギンウォーク
+  type: literal
+- pattern: 内反射手
+  replacement: 内反小趾
+  type: literal
+- pattern: カナケイストレッチ
+  replacement: カマキリストレッチ
+  type: literal
+- pattern: アニマーショー
+  replacement: アニマルフロー
+  type: literal
+- pattern: スネレム
+  replacement: スネデブ
+  type: literal
+- pattern: 足レム
+  replacement: 足デブ
+  type: literal
+- pattern: 自陣迷走区
+  replacement: ジジイメソッド
+  type: literal
+- pattern: 脇突然拠筋
+  replacement: 脇と前鋸筋
+  type: literal
+- pattern: 肩骨骨
+  replacement: 肩甲骨
+  type: literal
+- pattern: 肩んで
+  replacement: 下丹田
+  type: literal
+- pattern: 唾液ダンス
+  replacement: 体癖ダンス
+  type: literal
+- pattern: 思考合図
+  replacement: 知行合一
+  type: literal
+- pattern: サンデートリズム
+  replacement: 三点倒立
+  type: literal
+- pattern: 素形部
+  replacement: 鼠径部
+  type: literal
+- pattern: 素形度
+  replacement: 鼠径部
+  type: literal
+- pattern: 初形部
+  replacement: 鼠径部
+  type: literal
+- pattern: そばねち
+  replacement: 鼠径部
+  type: literal
+- pattern: ステール
+  replacement: 鼠径部
+  type: literal
+- pattern: 初期エグ
+  replacement: 鼠径部
+  type: literal
+- pattern: タンディング
+  replacement: 丹田
+  type: literal
+- pattern: 静か断電
+  replacement: 臍下丹田
+  type: literal
+- pattern: 背下断線
+  replacement: 臍下丹田
+  type: literal
+- pattern: 中足人体
+  replacement: 中足靭帯
+  type: literal
+- pattern: 海内海外
+  replacement: 回内回外
+  type: literal
+- pattern: 内線できない
+  replacement: 内旋できない
+  type: literal
+- pattern: 飛球
+  replacement: 腓骨
+  type: literal
+- pattern: 脱瘍
+  replacement: 蹲踞
+  type: literal
+- pattern: 肩面
+  replacement: 下丹田
+  type: literal
+- pattern: 速球中の一色
+  replacement: 初級中の初級
+  type: literal
+- pattern: 両手して
+  replacement: 病気して
+  type: literal
+- pattern: 照明粉どう
+  replacement: 小便小僧
+  type: literal
+- pattern: バリーナ
+  replacement: バレリーナ
+  type: literal
+- pattern: バニー
+  replacement: ワニ
+  type: literal
+- pattern: 開配
+  replacement: 開閉
+  type: literal
+- pattern: トマネチ
+  replacement: コマネチ
+  type: literal
+- pattern: ボディボー
+  replacement: ボディボイス
+  type: literal
+- pattern: 行けです
+  replacement: OKです
+  type: literal
+- pattern: 肯定です
+  replacement: 交代です
+  type: literal
 important_terms:
-  - 中足靭帯
-  - 臍下丹田
-  - 中丹田
-  - 八つの心得
-  - 膝ぐにゃ
-  - 足裏球体
-  - スネO脚
-  - O脚
-  - ヒップヒンジ
-  - 鼠径部一の型
-  - 陰練
-  - アイソレ
-  - 体癖
-  - 肘締めコンパス
-  - ボディヒアリング
-  - 体癖ダンス
-  - 閉じ蹲踞
-  - 開き蹲踞
-  - 中蹲踞
-  - ローアクセル
-  - ハイアクセル
-  - キネティックチェーン
-  - ゴリラウォーク
-  - クモストレッチ
-  - うさぎ跳びウォーク
-  - ビーストウォーク
-  - トリウォーク
-  - ジジイメソッド
-  - 朝活
-  - おパイセン
-  - ボディボイス
-  - 皇帝ペンギンウォーク
-  - 蹲踞面
-  - 動的ストレッチ
-  - カマキリストレッチ
-  - スネデブ
-  - ツルウォーク
-  - キリンウォーク
-  - ワニウォーク
-  - アニマルフロー
-  - 腓骨
-  - 橈骨
-  - 回内回外
-  - 叡智
-  - 自因自果
-  - 脱力美努力
-  - 守破離
-  - 若マス
-  - 下丹田
-  - 前鋸筋
-  - 肩甲骨
-  - 知行合一
-  - 三点倒立
-  - 体癖ダンス
-  - 仙骨
-  - 足デブ
+- 中足靭帯
+- 臍下丹田
+- 中丹田
+- 八つの心得
+- 膝ぐにゃ
+- 足裏球体
+- スネO脚
+- O脚
+- ヒップヒンジ
+- 鼠径部一の型
+- 陰練
+- アイソレ
+- 体癖
+- 肘締めコンパス
+- ボディヒアリング
+- 体癖ダンス
+- 閉じ蹲踞
+- 開き蹲踞
+- 中蹲踞
+- ローアクセル
+- ハイアクセル
+- キネティックチェーン
+- ゴリラウォーク
+- クモストレッチ
+- うさぎ跳びウォーク
+- ビーストウォーク
+- トリウォーク
+- ジジイメソッド
+- 朝活
+- おパイセン
+- ボディボイス
+- 皇帝ペンギンウォーク
+- 蹲踞面
+- 動的ストレッチ
+- カマキリストレッチ
+- スネデブ
+- ツルウォーク
+- キリンウォーク
+- ワニウォーク
+- アニマルフロー
+- 腓骨
+- 橈骨
+- 回内回外
+- 叡智
+- 自因自果
+- 脱力美努力
+- 守破離
+- 若マス
+- 下丹田
+- 前鋸筋
+- 肩甲骨
+- 知行合一
+- 三点倒立
+- 体癖ダンス
+- 仙骨
+- 足デブ
