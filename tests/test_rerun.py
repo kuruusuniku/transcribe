@@ -234,3 +234,26 @@ class TestRerunCommand:
 
         assert result.exit_code == 0, result.output
         mock_pipeline.assert_called_once()
+
+    def test_numeric_id_finds_job(self, db, fake_cfg, tmp_path):
+        """数字のみを渡すとジョブIDで検索される（URLとして扱われない）"""
+        upsert_job(db, "https://example.com/watch?v=NUM1")
+        j = get_job_by_url_or_id(db, "https://example.com/watch?v=NUM1")
+        update_status(db, j["id"], "done", video_id="NUM1")
+
+        with _mock_env(fake_cfg) as (_, mock_pipeline):
+            result = runner.invoke(app, ["rerun", str(j["id"]), "--yes"])
+
+        assert result.exit_code == 0, result.output
+        mock_pipeline.assert_called_once()
+        updated = get_job_by_id(db, j["id"])
+        assert updated["status"] == "queued"
+
+    def test_numeric_id_not_found_shows_error(self, db, fake_cfg):
+        """存在しない数字IDを渡すとエラーメッセージが出て終了する（新規登録されない）"""
+        with _mock_env(fake_cfg) as (_, mock_pipeline):
+            result = runner.invoke(app, ["rerun", "9999", "--yes"])
+
+        assert result.exit_code == 1
+        assert "9999" in result.output
+        mock_pipeline.assert_not_called()

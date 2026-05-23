@@ -16,6 +16,7 @@ from . import setup_logging
 from .config import load_config, load_glossary
 from .pipeline import run_pipeline
 from .state import (
+    delete_job,
     get_all_done_jobs,
     get_all_jobs,
     get_job_by_id,
@@ -276,14 +277,19 @@ def rerun(
     cfg, glossary = _load_cfg_and_glossary()
     db = cfg.state_db
 
-    job = get_job_by_url_or_id(db, url_or_id)
-
-    if job is None:
-        console.print(
-            f"[yellow]該当ジョブが見つかりません。新規ジョブとして登録します: {url_or_id}[/yellow]"
-        )
-        run_pipeline([url_or_id], cfg, glossary)
-        return
+    if url_or_id.isdigit():
+        job = get_job_by_id(db, int(url_or_id))
+        if job is None:
+            console.print(f"[red]ID {url_or_id} のジョブが見つかりません[/red]")
+            raise typer.Exit(1)
+    else:
+        job = get_job_by_url_or_id(db, url_or_id)
+        if job is None:
+            console.print(
+                f"[yellow]該当ジョブが見つかりません。新規ジョブとして登録します: {url_or_id}[/yellow]"
+            )
+            run_pipeline([url_or_id], cfg, glossary)
+            return
 
     source_type = job["source_type"] if "source_type" in job.keys() else "youtube"
     if source_type == "local" and not Path(job["url"]).exists():
@@ -487,6 +493,34 @@ def web(
 
     console.print(f"[green]transcribe Web UI を起動します: http://{actual_host}:{actual_port}[/green]")
     uvicorn.run(web_app, host=actual_host, port=actual_port, reload=reload)
+
+
+@app.command()
+def delete(
+    job_id: int = typer.Argument(..., help="削除するジョブID"),
+    files: bool = typer.Option(False, "--files", help="出力ディレクトリも削除する"),
+) -> None:
+    """DBのジョブレコードを削除する（--files で出力ディレクトリも削除）"""
+    cfg, _ = _load_cfg_and_glossary()
+    db = cfg.state_db
+
+    job = get_job_by_id(db, job_id)
+    if job is None:
+        console.print(f"[red]ID {job_id} のジョブが見つかりません[/red]")
+        raise typer.Exit(1)
+
+    output_dir = Path(job["output_dir"]) if job["output_dir"] else None
+    delete_job(db, job_id)
+    console.print(f"[green]ジョブ {job_id} を削除しました[/green]")
+
+    if files:
+        if output_dir is None:
+            console.print("[yellow]output_dir が設定されていません（ファイル削除スキップ）[/yellow]")
+        elif not output_dir.exists():
+            console.print(f"[yellow]出力ディレクトリが見つかりません（スキップ）: {output_dir}[/yellow]")
+        else:
+            shutil.rmtree(output_dir)
+            console.print(f"[green]削除: {output_dir}[/green]")
 
 
 @app.command()

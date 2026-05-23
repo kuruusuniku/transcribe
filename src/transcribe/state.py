@@ -226,3 +226,8 @@ def record_summarized(db_path: Path, job_id: int) -> None:
                WHERE id = ?""",
             (job_id,),
         )
+
+
+def delete_job(db_path: Path, job_id: int) -> None:
+    with _connect(db_path) as conn:
+        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
