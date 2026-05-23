@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-**最終更新日**: 2026-05-23
+**最終更新日**: 2026-05-24
 
 YouTube限定公開動画（武術稽古指導の録画）をローカルGPUで自動文字起こしし、まとめ生成・Google Docs 同期まで一気通貫で行うツール。
 
@@ -109,7 +109,7 @@ transcribe/
     └── test_web.py            # 18件
 ```
 
-**テスト総数**: 165件（全パス）
+**テスト総数**: 198件（全パス）
 
 ---
 
@@ -238,7 +238,7 @@ transcribe/
 
 ## 10. 運用上の注意点
 
-- VRAM 4GB 制約: `compute_type="int8_float16"` 必須、Demucs と Whisper の同時 GPU ロード不可
+- VRAM 4GB 制約: `compute_type="int8"` 必須（Pascal/CC6.1 は int8_float16 の Tensor Core 非対応）、Demucs と Whisper の同時 GPU ロード不可
 - yt-dlp の Cookie 認証は対象ブラウザを完全終了している必要がある
 - Windows パスは全て `pathlib.Path` で扱う
 - ログ書き込みは `encoding="utf-8"` 必須（日本語ファイル名対応）
@@ -253,6 +253,7 @@ transcribe/
 
 ## 11. 直近のコミット履歴
 
+- `fix: バグ修正9件（高優先度3件・中優先度4件・低優先度2件）`
 - `feat: Web UI を追加（FastAPI + React）`
 - `feat: m4a ファイルの文字起こし対応と convert コマンド追加`
 - `feat: LLM による自動カスタムまとめ生成機能を追加`
