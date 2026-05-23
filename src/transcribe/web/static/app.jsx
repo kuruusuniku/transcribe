@@ -332,6 +332,7 @@ function CommandPanel({ onTaskStart, onMessage }) {
   const [urls, setUrls] = useState('');
   const [loading, setLoading] = useState(false);
   const fileRef = useRef(null);
+  const convertRef = useRef(null);
 
   const postJson = async (endpoint, body) => {
     setLoading(true);
@@ -363,6 +364,37 @@ function CommandPanel({ onTaskStart, onMessage }) {
     }
     postJson('run', { urls: urlList });
     setUrls('');
+  };
+
+  const handleConvert = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoading(true);
+    onMessage(`[変換中] ${file.name} → ${file.name.replace(/\.m4a$/i, '.mp3')} (変換中はしばらくお待ちください...)`);
+    const form = new FormData();
+    form.append('audio', file);
+    try {
+      const res = await fetch('/api/convert', { method: 'POST', body: form });
+      if (!res.ok) {
+        const err = await res.text();
+        onMessage(`[エラー] convert: ${err}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const filename = file.name.replace(/\.m4a$/i, '.mp3');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      onMessage(`[完了] ${filename} に変換しました`);
+    } catch (e) {
+      onMessage(`[エラー] ${e.message}`);
+    } finally {
+      setLoading(false);
+      if (convertRef.current) convertRef.current.value = '';
+    }
   };
 
   const handleFileUpload = async (e) => {
@@ -412,6 +444,11 @@ function CommandPanel({ onTaskStart, onMessage }) {
         <button onClick={() => postJson('summarize', { all: true })} disabled={loading}>全件まとめ</button>
         <button onClick={() => postJson('sync-notion', { all: false })} disabled={loading}>未Notion同期</button>
         <button onClick={() => postJson('sync-notion', { all: true })} disabled={loading}>全件Notion同期</button>
+        <label className="file-btn">
+          m4a→mp3変換
+          <input ref={convertRef} type="file" accept=".m4a" onChange={handleConvert} style={{ display: 'none' }} />
+        </label>
+        <button onClick={() => postJson('clean', {})} disabled={loading}>一時ファイル削除</button>
       </div>
     </div>
   );

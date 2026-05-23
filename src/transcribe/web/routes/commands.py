@@ -116,3 +116,10 @@ async def sync_notion_jobs(body: SyncNotionBody):
         cmd += ["--id", str(body.job_id)]
     task_id = start_task(cmd)
     return {"task_id": task_id}
+
+
+@router.post("/clean")
+async def clean_work():
+    cmd = transcribe_cmd("clean")
+    task_id = start_task(cmd)
+    return {"task_id": task_id}
