@@ -331,8 +331,10 @@ function GlossaryEditor({ onClose }) {
 function CommandPanel({ onTaskStart, onMessage }) {
   const [urls, setUrls] = useState('');
   const [loading, setLoading] = useState(false);
+  const [convertFiles, setConvertFiles] = useState([]);
   const fileRef = useRef(null);
   const convertRef = useRef(null);
+  const convertFolderRef = useRef(null);
 
   const postJson = async (endpoint, body) => {
     setLoading(true);
@@ -366,13 +368,17 @@ function CommandPanel({ onTaskStart, onMessage }) {
     setUrls('');
   };
 
-  const handleConvert = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleConvert = async (files) => {
+    if (!files.length) return;
+    setConvertFiles(files);
     setLoading(true);
-    onMessage(`[変換中] ${file.name} → ${file.name.replace(/\.m4a$/i, '.mp3')} (変換中はしばらくお待ちください...)`);
+    if (files.length === 1) {
+      onMessage(`[変換中] ${files[0].name} → ${files[0].name.replace(/\.m4a$/i, '.mp3')} (変換中はしばらくお待ちください...)`);
+    } else {
+      onMessage(`[変換中] ${files.length}件 変換中... (しばらくお待ちください...)`);
+    }
     const form = new FormData();
-    form.append('audio', file);
+    files.forEach(f => form.append('files', f));
     try {
       const res = await fetch('/api/convert', { method: 'POST', body: form });
       if (!res.ok) {
@@ -380,21 +386,41 @@ function CommandPanel({ onTaskStart, onMessage }) {
         onMessage(`[エラー] convert: ${err}`);
         return;
       }
+      const contentType = res.headers.get('Content-Type') || '';
       const blob = await res.blob();
+      const downloadName = contentType.includes('application/zip')
+        ? 'converted.zip'
+        : files[0].name.replace(/\.m4a$/i, '.mp3');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const filename = file.name.replace(/\.m4a$/i, '.mp3');
       a.href = url;
-      a.download = filename;
+      a.download = downloadName;
       a.click();
       URL.revokeObjectURL(url);
-      onMessage(`[完了] ${filename} に変換しました`);
+      const msg = contentType.includes('application/zip')
+        ? `[完了] converted.zip に変換しました (${files.length}件)`
+        : `[完了] ${downloadName} に変換しました`;
+      onMessage(msg);
     } catch (e) {
       onMessage(`[エラー] ${e.message}`);
     } finally {
       setLoading(false);
+      setConvertFiles([]);
       if (convertRef.current) convertRef.current.value = '';
+      if (convertFolderRef.current) convertFolderRef.current.value = '';
     }
+  };
+
+  const handleConvertInput = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) handleConvert(files);
+  };
+
+  const handleFolderInput = (e) => {
+    const files = Array.from(e.target.files || []).filter(f =>
+      f.name.toLowerCase().endsWith('.m4a')
+    );
+    if (files.length) handleConvert(files);
   };
 
   const handleFileUpload = async (e) => {
@@ -446,8 +472,15 @@ function CommandPanel({ onTaskStart, onMessage }) {
         <button onClick={() => postJson('sync-notion', { all: true })} disabled={loading}>全件Notion同期</button>
         <label className="file-btn">
           m4a→mp3変換
-          <input ref={convertRef} type="file" accept=".m4a" onChange={handleConvert} style={{ display: 'none' }} />
+          <input ref={convertRef} type="file" accept=".m4a" multiple onChange={handleConvertInput} style={{ display: 'none' }} />
         </label>
+        <label className="file-btn">
+          フォルダ選択
+          <input ref={convertFolderRef} type="file" webkitdirectory="" onChange={handleFolderInput} style={{ display: 'none' }} />
+        </label>
+        {convertFiles.length > 0 && (
+          <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{convertFiles.length}件選択中</span>
+        )}
         <button onClick={() => postJson('clean', {})} disabled={loading}>一時ファイル削除</button>
       </div>
     </div>
