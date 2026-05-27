@@ -93,7 +93,7 @@ async def convert_file(files: list[UploadFile] = File(...), cfg: AppConfig = Dep
             return StreamingResponse(
                 iter([mp3_bytes]),
                 media_type="audio/mpeg",
-                headers={"Content-Disposition": f'attachment; filename="{stem}.mp3"'},
+                headers={"Content-Disposition": "attachment"},
             )
 
         tmp_zip = cfg.work_dir / f"{uuid4().hex}.zip"
