@@ -328,6 +328,37 @@ function GlossaryEditor({ onClose }) {
   );
 }
 
+const DB_NAME = 'transcribe-ui';
+const STORE_NAME = 'handles';
+
+async function saveHandleToIDB(handle) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(STORE_NAME);
+    req.onsuccess = e => {
+      const tx = e.target.result.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(handle, 'convertDir');
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    };
+    req.onerror = reject;
+  });
+}
+
+async function loadHandleFromIDB() {
+  return new Promise((resolve) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(STORE_NAME);
+    req.onsuccess = e => {
+      const tx = e.target.result.transaction(STORE_NAME, 'readonly');
+      const get = tx.objectStore(STORE_NAME).get('convertDir');
+      get.onsuccess = () => resolve(get.result || null);
+      get.onerror = () => resolve(null);
+    };
+    req.onerror = () => resolve(null);
+  });
+}
+
 function CommandPanel({ onTaskStart, onMessage }) {
   const [urls, setUrls] = useState('');
   const [loading, setLoading] = useState(false);
@@ -337,6 +368,15 @@ function CommandPanel({ onTaskStart, onMessage }) {
   const [dragOver, setDragOver] = useState(false);
   const [dirName, setDirName] = useState('');
   const dirHandleRef = useRef(null);
+
+  useEffect(() => {
+    loadHandleFromIDB().then(handle => {
+      if (handle) {
+        dirHandleRef.current = handle;
+        setDirName(handle.name);
+      }
+    });
+  }, []);
 
   const postJson = async (endpoint, body) => {
     setLoading(true);
@@ -372,9 +412,13 @@ function CommandPanel({ onTaskStart, onMessage }) {
 
   const pickOutputDir = async () => {
     try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const handle = await window.showDirectoryPicker({
+        mode: 'readwrite',
+        ...(dirHandleRef.current ? { startIn: dirHandleRef.current } : {}),
+      });
       dirHandleRef.current = handle;
       setDirName(handle.name);
+      await saveHandleToIDB(handle);
       onMessage(`[変換] 保存先: ${handle.name}`);
     } catch (e) {
       if (e.name !== 'AbortError') onMessage(`[エラー] フォルダ選択: ${e.message}`);
