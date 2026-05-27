@@ -114,20 +114,24 @@ def _read_meta(output_dir: Path) -> dict:
 
 
 def _extract_tags_from_summary(summary_text: str) -> list[str]:
-    """summary.md の ### 主要キーワード セクションから箇条書き項目を抽出する。"""
+    """summary.md の主要キーワード・メソッド種別・指導対象の身体部位 セクションからタグを抽出する。"""
+    TARGET_SECTIONS = {"### 主要キーワード", "### メソッド種別", "### 指導対象の身体部位"}
     tags: list[str] = []
+    seen: set[str] = set()
     in_section = False
     for line in summary_text.splitlines():
-        if line.strip() == "### 主要キーワード":
+        if line.strip() in TARGET_SECTIONS:
             in_section = True
             continue
         if in_section:
             if line.startswith("#"):
-                break
+                in_section = False
+                continue
             m = re.match(r"^[*\-]\s+(.+)", line.strip())
             if m:
-                tag = m.group(1).strip()
-                if tag:
+                tag = m.group(1).strip().replace(",", "・")
+                if tag and tag not in seen:
+                    seen.add(tag)
                     tags.append(tag)
     return tags
 
