@@ -291,6 +291,35 @@
       color: #000;
       border-color: var(--accent);
     }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      margin-top: 8px;
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.15s, background 0.15s;
+      cursor: default;
+    }
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(99,102,241,0.08);
+    }
+    .drop-hint { color: var(--text-dim); font-size: 13px; pointer-events: none; }
+    .drop-queue { width: 100%; text-align: left; }
+    .drop-file-list {
+      list-style: none; padding: 0; margin: 0 0 8px 0;
+      max-height: 160px; overflow-y: auto;
+    }
+    .drop-file-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
+    .drop-status-icon { width: 16px; flex-shrink: 0; text-align: center; }
+    .status-done .drop-file-name { color: #4caf50; }
+    .status-error .drop-file-name { color: #f44336; }
+    .status-converting .drop-file-name { color: var(--accent); }
+    .drop-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
   </style>
 </head>
 <body>

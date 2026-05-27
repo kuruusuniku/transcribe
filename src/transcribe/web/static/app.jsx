@@ -331,10 +331,12 @@ function GlossaryEditor({ onClose }) {
 function CommandPanel({ onTaskStart, onMessage }) {
   const [urls, setUrls] = useState('');
   const [loading, setLoading] = useState(false);
-  const [convertFiles, setConvertFiles] = useState([]);
   const fileRef = useRef(null);
   const convertRef = useRef(null);
-  const convertFolderRef = useRef(null);
+  const [dropFiles, setDropFiles] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [dirName, setDirName] = useState('');
+  const dirHandleRef = useRef(null);
 
   const postJson = async (endpoint, body) => {
     setLoading(true);
@@ -368,59 +370,75 @@ function CommandPanel({ onTaskStart, onMessage }) {
     setUrls('');
   };
 
-  const handleConvert = async (files) => {
-    if (!files.length) return;
-    setConvertFiles(files);
-    setLoading(true);
-    if (files.length === 1) {
-      onMessage(`[変換中] ${files[0].name} → ${files[0].name.replace(/\.m4a$/i, '.mp3')} (変換中はしばらくお待ちください...)`);
-    } else {
-      onMessage(`[変換中] ${files.length}件 変換中... (しばらくお待ちください...)`);
-    }
-    const form = new FormData();
-    files.forEach(f => form.append('files', f));
+  const pickOutputDir = async () => {
     try {
-      const res = await fetch('/api/convert', { method: 'POST', body: form });
-      if (!res.ok) {
-        const err = await res.text();
-        onMessage(`[エラー] convert: ${err}`);
-        return;
-      }
-      const contentType = res.headers.get('Content-Type') || '';
-      const blob = await res.blob();
-      const downloadName = contentType.includes('application/zip')
-        ? 'converted.zip'
-        : files[0].name.replace(/\.m4a$/i, '.mp3');
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = downloadName;
-      a.click();
-      URL.revokeObjectURL(url);
-      const msg = contentType.includes('application/zip')
-        ? `[完了] converted.zip に変換しました (${files.length}件)`
-        : `[完了] ${downloadName} に変換しました`;
-      onMessage(msg);
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      dirHandleRef.current = handle;
+      setDirName(handle.name);
+      onMessage(`[変換] 保存先: ${handle.name}`);
     } catch (e) {
-      onMessage(`[エラー] ${e.message}`);
-    } finally {
-      setLoading(false);
-      setConvertFiles([]);
-      if (convertRef.current) convertRef.current.value = '';
-      if (convertFolderRef.current) convertFolderRef.current.value = '';
+      if (e.name !== 'AbortError') onMessage(`[エラー] フォルダ選択: ${e.message}`);
     }
   };
 
-  const handleConvertInput = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length) handleConvert(files);
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files).filter(f => /\.(mp3|m4a)$/i.test(f.name));
+    if (!files.length) return;
+    setDropFiles(files.map((f, i) => ({ id: i, file: f, status: 'pending', name: f.name })));
   };
 
-  const handleFolderInput = (e) => {
-    const files = Array.from(e.target.files || []).filter(f =>
-      f.name.toLowerCase().endsWith('.m4a')
-    );
-    if (files.length) handleConvert(files);
+  const handleConvertQueue = async () => {
+    const targets = dropFiles.filter(f => /\.m4a$/i.test(f.name));
+    if (!targets.length) return;
+    if (!dirHandleRef.current) {
+      await pickOutputDir();
+      if (!dirHandleRef.current) return;
+    }
+    setLoading(true);
+    for (const item of targets) {
+      setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'converting' } : f));
+      try {
+        const form = new FormData();
+        form.append('files', item.file);
+        const res = await fetch('/api/convert', { method: 'POST', body: form });
+        if (!res.ok) throw new Error(await res.text());
+        const blob = await res.blob();
+        const mp3Name = item.name.replace(/\.m4a$/i, '.mp3');
+        const fileHandle = await dirHandleRef.current.getFileHandle(mp3Name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'done' } : f));
+        onMessage(`[完了] ${mp3Name}`);
+      } catch (e) {
+        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
+        onMessage(`[エラー] ${item.name}: ${e.message}`);
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleTranscribeQueue = async () => {
+    if (!dropFiles.length) return;
+    setLoading(true);
+    for (const item of dropFiles) {
+      setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'converting' } : f));
+      try {
+        const form = new FormData();
+        form.append('audio', item.file);
+        const res = await fetch('/api/run/file', { method: 'POST', body: form });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        onTaskStart(data.task_id);
+        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'done' } : f));
+      } catch (e) {
+        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
+        onMessage(`[エラー] ${item.name}: ${e.message}`);
+      }
+    }
+    setLoading(false);
   };
 
   const handleFileUpload = async (e) => {
@@ -470,18 +488,45 @@ function CommandPanel({ onTaskStart, onMessage }) {
         <button onClick={() => postJson('summarize', { all: true })} disabled={loading}>全件まとめ</button>
         <button onClick={() => postJson('sync-notion', { all: false })} disabled={loading}>未Notion同期</button>
         <button onClick={() => postJson('sync-notion', { all: true })} disabled={loading}>全件Notion同期</button>
-        <label className="file-btn">
-          m4a→mp3変換
-          <input ref={convertRef} type="file" accept=".m4a" multiple onChange={handleConvertInput} style={{ display: 'none' }} />
-        </label>
-        <label className="file-btn">
-          フォルダ選択
-          <input ref={convertFolderRef} type="file" webkitdirectory="" onChange={handleFolderInput} style={{ display: 'none' }} />
-        </label>
-        {convertFiles.length > 0 && (
-          <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{convertFiles.length}件選択中</span>
-        )}
         <button onClick={() => postJson('clean', {})} disabled={loading}>一時ファイル削除</button>
+      </div>
+      <div
+        className={`drop-zone${dragOver ? ' drag-over' : ''}`}
+        onDrop={handleDrop}
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+      >
+        {dropFiles.length === 0 ? (
+          <span className="drop-hint">.mp3 / .m4a をここにドロップ</span>
+        ) : (
+          <div className="drop-queue">
+            <ul className="drop-file-list">
+              {dropFiles.map(f => (
+                <li key={f.id} className={`drop-file-item status-${f.status}`}>
+                  <span className="drop-status-icon">
+                    {f.status === 'pending' && '○'}
+                    {f.status === 'converting' && '⏳'}
+                    {f.status === 'done' && '✓'}
+                    {f.status === 'error' && '✗'}
+                  </span>
+                  <span className="drop-file-name">{f.name}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="drop-actions">
+              {dropFiles.some(f => /\.m4a$/i.test(f.name)) && (
+                <button onClick={handleConvertQueue} disabled={loading}>
+                  m4a→mp3変換{dirName && ` → ${dirName}`}
+                </button>
+              )}
+              <button onClick={handleTranscribeQueue} disabled={loading}>文字起こし</button>
+              <button onClick={pickOutputDir} disabled={loading} className="secondary">
+                {dirName ? `📁 ${dirName}` : '📁 保存先を選択'}
+              </button>
+              <button onClick={() => setDropFiles([])} disabled={loading} className="secondary">クリア</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
