@@ -113,18 +113,38 @@ def _read_meta(output_dir: Path) -> dict:
         return {}
 
 
+def _extract_tags_from_summary(summary_text: str) -> list[str]:
+    """summary.md の ### 主要キーワード セクションから箇条書き項目を抽出する。"""
+    tags: list[str] = []
+    in_section = False
+    for line in summary_text.splitlines():
+        if line.strip() == "### 主要キーワード":
+            in_section = True
+            continue
+        if in_section:
+            if line.startswith("#"):
+                break
+            m = re.match(r"^[*\-]\s+(.+)", line.strip())
+            if m:
+                tag = m.group(1).strip()
+                if tag:
+                    tags.append(tag)
+    return tags
+
+
 def _build_properties(
     title: str,
     date_str: str | None,
     video_url: str,
     duration_min: int | None,
     source_type: str,
+    tags: list[str] | None = None,
 ) -> dict:
     props: dict = {
         "名前": {"title": [{"text": {"content": title[:_RICH_TEXT_LIMIT]}}]},
         "ソース種別": {"select": {"name": source_type}},
         "まとめ進捗": {"checkbox": True},
-        "タグ": {"multi_select": []},
+        "タグ": {"multi_select": [{"name": t} for t in (tags or [])]},
     }
     if date_str and date_str != "不明":
         props["日付"] = {"date": {"start": date_str}}
@@ -209,7 +229,8 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
     duration_min = meta.get("duration_minutes")
 
     client = Client(auth=cfg.token)
-    props = _build_properties(title, date_str, video_url, duration_min, source_type)
+    tags = _extract_tags_from_summary(summary_text)
+    props = _build_properties(title, date_str, video_url, duration_min, source_type, tags)
     blocks = md_to_blocks(summary_text)
 
     existing_page_id: str | None = None
