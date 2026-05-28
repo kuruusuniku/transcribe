@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-**最終更新日**: 2026-05-24
+**最終更新日**: 2026-05-29
 
 YouTube限定公開動画（武術稽古指導の録画）をローカルGPUで自動文字起こしし、まとめ生成・Google Docs 同期まで一気通貫で行うツール。
 
@@ -97,7 +97,11 @@ transcribe/
 │       │   └── log_stream.py # WebSocket ログストリーミング
 │       └── static/
 │           ├── index.html    # React エントリポイント
-│           └── app.jsx       # React コンポーネント群
+│           ├── app.jsx       # React コンポーネント群
+│           └── favicon.svg   # ファビコン（巻物×音波デザイン）
+├── scripts/
+│   ├── migrate_notion_pages.py  # Notion 既存ページ → DB 一括移行
+│   └── patch_notion_db.py       # Notion DB レコード補完パッチ
 └── tests/
     ├── test_local_file.py     # 37件
     ├── test_pipeline_retry.py
@@ -188,6 +192,25 @@ transcribe/
 - state.db の変更なし
 - テスト 18件追加（全165件パス）
 
+### 11. Web UI 強化（completed）
+- D&Dエリアを追加（.mp3 / .m4a をドロップ後に用途選択）
+- m4a→mp3 変換をキュー処理化（1件ずつ順次変換・進捗表示）
+- File System Access API による保存先フォルダ指定（Brave/Chrome/Edge 対応）
+- 保存先フォルダを IndexedDB で永続化（再起動後も維持）
+- 複数ファイル・フォルダ選択対応（`/api/convert` を複数ファイル受付に変更）
+- ファビコン追加（`static/favicon.svg`、巻物×音波デザイン）
+- Content-Disposition ヘッダーの日本語ファイル名エンコードエラーを修正
+
+### 12. Notion 同期強化（completed）
+- タグ自動抽出を3セクション対応に拡張（主要キーワード・メソッド種別・指導対象の身体部位）
+- タグ名のカンマを `・` に自動置換（Notion multi_select のバリデーション対応）
+- 重複タグを自動排除
+
+### 13. Notion DB 移行スクリプト（completed）
+- `scripts/patch_notion_db.py` を新規作成
+- `--mode copy-blocks`: 元まとめサブページの本文ブロックを DB レコードに一括コピー（85件対応）
+- link_preview mention → テキストリンク変換、table ブロックの children 自動付加、rich_text 100件超の自動分割など Notion API 制約を吸収
+
 ---
 
 ## 6. 本運用フェーズの状況
@@ -253,10 +276,11 @@ transcribe/
 
 ## 11. 直近のコミット履歴
 
-- `fix: バグ修正9件（高優先度3件・中優先度4件・低優先度2件）`
-- `feat: Web UI を追加（FastAPI + React）`
-- `feat: m4a ファイルの文字起こし対応と convert コマンド追加`
-- `feat: LLM による自動カスタムまとめ生成機能を追加`
-- `feat: Google Docs 同期機能を追加`
-- `feat: ローカル MP3 ファイルの文字起こしに対応`
-- `chore: 用語辞書に新規誤認識パターンを追加（5回目）`
+- `feat: NotionDBレコードに元まとめページの本文ブロックを一括コピー`
+- `feat: Notionタグ抽出をメソッド種別・指導対象の身体部位にも拡張`
+- `feat: ファビコンを追加`
+- `fix: 日本語ファイル名によるContent-Dispositionのlatin-1エンコードエラーを修正`
+- `feat: 変換保存先をIndexedDBで永続化・showDirectoryPickerのstartIn対応`
+- `feat: D&Dエリアと変換キュー・File System Access APIによる保存先指定を追加`
+- `feat: m4a→mp3変換を複数ファイル・フォルダ選択に対応`
+- `feat: Notion同期時に主要キーワードをタグとして自動反映`

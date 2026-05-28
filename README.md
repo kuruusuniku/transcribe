@@ -57,7 +57,9 @@ YouTube 限定公開動画・ローカル音声ファイルの自動文字起こ
 
 `uv run transcribe web` で http://localhost:8000 を起動。
 ブラウザから全コマンドを操作でき、ログをリアルタイムで確認できる。
-mp3/m4a のアップロードや transcript.md / summary.md のインライン閲覧も可能。
+mp3/m4a のアップロード・D&Dによる変換キュー・transcript.md / summary.md のインライン閲覧が可能。
+D&Dゾーンにファイルをドロップして「m4a→mp3変換」または「文字起こし」を選択できる。
+変換結果は File System Access API で指定フォルダに順次保存される（Brave/Chrome/Edge）。
 
 ## 運用フロー
 
@@ -98,3 +100,5 @@ mp3/m4a のアップロードや transcript.md / summary.md のインライン�
 - **Demucs（音声分離）は本運用では OFF**: BGM 除去が認識精度を逆に悪化させる（人声の微細な音響特徴を削るため）。1 時間動画で約 50 分の処理時間追加、GTX 1050 Ti 環境では GPU 温度 89℃ まで上昇。`audio_separation.enabled: false` を推奨。
 - **glossary.yaml を厚くすることで認識精度が向上**: 現在約 93 エントリ。`substitutions` に誤認識パターンを継続追加することで、要確認セグメント数が劇的に減少した（初期 11 件 → 最新 0 件）。
 - **出力ディレクトリ**: `data/output/{YYYY-MM-DD}_{video_id}/` に `transcript.md` / `summary.md` / `segments.json` / `meta.json` が生成される。低信頼度セグメントには `⚠️[要確認: 低信頼]` マークが付く。
+- **Notion タグ自動抽出**: `sync-notion` 実行時に `summary.md` の「主要キーワード」「メソッド種別」「指導対象の身体部位」セクションからタグを自動抽出して Notion の `タグ` プロパティに反映する。
+- **Notion DB 移行スクリプト**: `scripts/patch_notion_db.py --mode copy-blocks` で既存まとめサブページの本文ブロックを DB レコードに一括コピーできる。
