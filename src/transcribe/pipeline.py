@@ -68,6 +68,9 @@ def _output_dir_for(output_root: Path, upload_date: str | None, video_id: str) -
 
 
 def _copy_local_file(source_path: str, work_dir: Path) -> Path:
+    # アップロード済みファイルが既に work_dir 内にある場合はコピー不要
+    if Path(source_path).resolve().parent == work_dir.resolve():
+        return Path(source_path)
     src = Path(source_path)
     if not src.exists():
         raise FileNotFoundError(f"ソースファイルが見つかりません: {source_path}")
