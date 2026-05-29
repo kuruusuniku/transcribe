@@ -102,6 +102,7 @@ class NotionConfig:
     enabled: bool = False
     token: str = ""
     database_id: str = ""
+    local_database_id: str = ""
 
 
 @dataclass
@@ -239,6 +240,7 @@ def load_config(config_path: Path) -> AppConfig:
         enabled=notion_raw.get("enabled", False),
         token=notion_raw.get("token", ""),
         database_id=notion_raw.get("database_id", ""),
+        local_database_id=notion_raw.get("local_database_id", ""),
     )
 
     web_raw = raw.get("web", {})

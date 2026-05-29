@@ -497,7 +497,7 @@ def _make_ok_response(results):
 def test_query_notion_db_503_retries_then_succeeds(mock_post, mock_sleep, notion_cfg):
     mock_post.side_effect = [_make_503_response(), _make_ok_response([{"id": "page-id"}])]
 
-    pages = _query_notion_db(notion_cfg, "https://example.com/video")
+    pages = _query_notion_db(notion_cfg, "https://example.com/video", notion_cfg.database_id)
 
     assert pages == [{"id": "page-id"}]
     assert mock_post.call_count == 2
@@ -510,7 +510,7 @@ def test_query_notion_db_503_max_retries_raises(mock_post, mock_sleep, notion_cf
     mock_post.return_value = _make_503_response()
 
     with pytest.raises(httpx.HTTPStatusError):
-        _query_notion_db(notion_cfg, "https://example.com/video")
+        _query_notion_db(notion_cfg, "https://example.com/video", notion_cfg.database_id)
 
     assert mock_post.call_count == 4  # 初回 + 3回リトライ
     assert mock_sleep.call_count == 3
@@ -522,7 +522,7 @@ def test_query_notion_db_503_logs_warning(mock_post, mock_sleep, notion_cfg, cap
     mock_post.side_effect = [_make_503_response(), _make_ok_response([])]
 
     with caplog.at_level(logging.WARNING, logger="transcribe.notion_sync"):
-        _query_notion_db(notion_cfg, "https://example.com/video")
+        _query_notion_db(notion_cfg, "https://example.com/video", notion_cfg.database_id)
 
     warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
     assert any("503" in m and "retry" in m for m in warning_msgs)

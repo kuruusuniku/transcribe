@@ -189,14 +189,14 @@ def _append_blocks_in_batches(client, page_id: str, blocks: list[dict]) -> None:
             raise
 
 
-def _query_notion_db(cfg: NotionConfig, video_url: str) -> list[dict]:
+def _query_notion_db(cfg: NotionConfig, video_url: str, database_id: str) -> list[dict]:
     """URL で既存ページを検索する。503 は自動リトライ。"""
     backoffs = _NOTION_503_RETRY_BACKOFFS_SEC
     max_retries = len(backoffs)
     for attempt in range(max_retries + 1):
         try:
             resp = httpx.post(
-                f"https://api.notion.com/v1/databases/{cfg.database_id}/query",
+                f"https://api.notion.com/v1/databases/{database_id}/query",
                 headers={
                     "Authorization": f"Bearer {cfg.token}",
                     "Notion-Version": "2022-06-28",
@@ -217,10 +217,20 @@ def _query_notion_db(cfg: NotionConfig, video_url: str) -> list[dict]:
     raise RuntimeError("到達不能: 503 リトライループが想定外に終了しました")
 
 
-def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
+def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_type: str = "youtube") -> bool:
     summary_path = output_dir / "summary.md"
     if not summary_path.exists():
         logger.info(f"summary.md が見つかりません。Notion 同期スキップ: {output_dir}")
+        return False
+
+    # source_type に応じて同期先 DB を決定
+    if source_type == "local" and cfg.local_database_id:
+        target_db_id = cfg.local_database_id
+    else:
+        target_db_id = cfg.database_id
+
+    if not target_db_id:
+        logger.warning(f"同期先の database_id が未設定です (source_type={source_type}): {output_dir}")
         return False
 
     summary_text = summary_path.read_text(encoding="utf-8")
@@ -229,7 +239,6 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
     title = meta.get("title") or output_dir.stem
     recording_date = meta.get("recording_date")
     date_str = recording_date if recording_date and recording_date != "不明" else None
-    source_type = meta.get("source_type", "youtube")
     duration_min = meta.get("duration_minutes")
 
     client = Client(auth=cfg.token)
@@ -240,7 +249,7 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
     existing_page_id: str | None = None
     if video_url.startswith(("http://", "https://")):
         try:
-            pages = _query_notion_db(cfg, video_url)
+            pages = _query_notion_db(cfg, video_url, target_db_id)
             if pages:
                 existing_page_id = pages[0]["id"]
         except Exception as e:
@@ -262,7 +271,7 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig) -> bool:
     else:
         first_batch = blocks[:_BLOCKS_PER_REQUEST]
         page = client.pages.create(
-            parent={"database_id": cfg.database_id},
+            parent={"database_id": target_db_id},
             properties=props,
             children=first_batch,
         )

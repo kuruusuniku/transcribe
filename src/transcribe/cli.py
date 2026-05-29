@@ -536,7 +536,8 @@ def sync_notion(
             skip_count += 1
             continue
         try:
-            synced = sync_to_notion(output_dir, job["url"], cfg.notion)
+            source_type = get_source_type(job)
+            synced = sync_to_notion(output_dir, job["url"], cfg.notion, source_type)
             if synced:
                 record_notion_synced(cfg.state_db, jid)
                 console.print(f"  [green]✓[/green] job {jid}: {job['title'] or job['url']}")

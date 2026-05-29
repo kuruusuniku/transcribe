@@ -248,7 +248,7 @@ def _run_job(
     if cfg.notion.enabled and cfg.notion.database_id and cfg.notion.token:
         try:
             from .notion_sync import sync_to_notion
-            synced = sync_to_notion(job_output_dir, url, cfg.notion)
+            synced = sync_to_notion(job_output_dir, url, cfg.notion, source_type)
             if synced:
                 record_notion_synced(db, job_id)
                 logger.info(f"[job {job_id}] Notion に同期完了")
