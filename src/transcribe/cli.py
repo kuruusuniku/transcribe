@@ -121,6 +121,19 @@ def run(
     ) as progress:
         run_pipeline(entries, cfg, glossary, progress=progress)
 
+    if cfg.notification.enabled and cfg.notification.to_email:
+        try:
+            from .notify import send_batch_report
+            processed_jobs = []
+            for entry in entries:
+                job = get_job_by_url_or_id(cfg.state_db, entry)
+                if job:
+                    processed_jobs.append(dict(job))
+            if processed_jobs:
+                send_batch_report(processed_jobs, cfg)
+        except Exception as e:
+            logger.warning(f"メール送信失敗: {e}")
+
 
 @app.command()
 def file(

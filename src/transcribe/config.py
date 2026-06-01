@@ -112,6 +112,12 @@ class WebConfig:
 
 
 @dataclass
+class NotificationConfig:
+    enabled: bool = False
+    to_email: str = ""
+
+
+@dataclass
 class AppConfig:
     paths: PathsConfig
     youtube: YoutubeConfig
@@ -124,6 +130,7 @@ class AppConfig:
     summarize: SummarizeConfig = field(default_factory=SummarizeConfig)
     notion: NotionConfig = field(default_factory=NotionConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    notification: NotificationConfig = field(default_factory=NotificationConfig)
 
     @property
     def work_dir(self) -> Path:
@@ -249,6 +256,12 @@ def load_config(config_path: Path) -> AppConfig:
         port=web_raw.get("port", 8000),
     )
 
+    notif_raw = raw.get("notification", {})
+    notification = NotificationConfig(
+        enabled=notif_raw.get("enabled", False),
+        to_email=notif_raw.get("to_email", ""),
+    )
+
     return AppConfig(
         paths=paths,
         youtube=youtube,
@@ -261,6 +274,7 @@ def load_config(config_path: Path) -> AppConfig:
         summarize=summarize,
         notion=notion,
         web=web,
+        notification=notification,
     )
 
 

@@ -14,7 +14,10 @@ from .config import GoogleDocsConfig
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+SCOPES = [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 
 
 def get_credentials(credentials_path: Path, token_path: Path) -> Credentials:
