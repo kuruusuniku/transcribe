@@ -180,3 +180,11 @@ def test_send_batch_report_does_not_raise_on_api_error(tmp_path):
     with patch("transcribe.notify.get_credentials", return_value=mock_creds), \
          patch("transcribe.notify.build", return_value=mock_service):
         send_batch_report([DONE_JOB], cfg)
+
+
+def test_build_report_body_shows_post_error():
+    job = {**DONE_JOB, "post_error": "まとめ生成: timeout\nNotion 同期: 401"}
+    body = _build_report_body([job])
+    assert "⚠ 後処理失敗: まとめ生成: timeout" in body
+    assert "⚠ 後処理失敗: Notion 同期: 401" in body
+    assert "後処理が失敗したジョブが 1 件" in body

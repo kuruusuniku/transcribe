@@ -35,10 +35,23 @@ def _build_report_body(jobs: list[dict]) -> str:
             docs_mark = "✓" if job.get("synced_at") else "—"
             notion_mark = "✓" if job.get("notion_synced_at") else "—"
             lines.append(f"   文字起こし: {transcribe_mark} | まとめ: {summary_mark} | Docs: {docs_mark} | Notion: {notion_mark}")
+            post_error = job.get("post_error")
+            if post_error:
+                for err_line in post_error.splitlines():
+                    lines.append(f"   ⚠ 後処理失敗: {err_line}")
         else:
             error = job.get("error_message", "")
             first_line = error.split("\n")[0] if error else "不明なエラー"
             lines.append(f"   ✗ 失敗: {first_line}")
+
+    warn_count = sum(1 for j in jobs if j["status"] == "done" and j.get("post_error"))
+    if warn_count:
+        lines.append("")
+        lines.append("=" * 50)
+        lines.append(
+            f"後処理が失敗したジョブが {warn_count} 件あります。"
+            "`transcribe summarize` / `transcribe sync-notion` / `transcribe sync` で再実行できます。"
+        )
 
     return "\n".join(lines)
 

@@ -74,6 +74,13 @@ def _migrate_notion_synced_at(conn: sqlite3.Connection) -> None:
         logger.info("マイグレーション: notion_synced_at カラムを追加しました")
 
 
+def _migrate_post_error(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "post_error" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN post_error TEXT")
+        logger.info("マイグレーション: post_error カラムを追加しました")
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
@@ -82,6 +89,7 @@ def init_db(db_path: Path) -> None:
         _migrate_synced_at(conn)
         _migrate_summarized_at(conn)
         _migrate_notion_synced_at(conn)
+        _migrate_post_error(conn)
     logger.debug(f"SQLite 初期化完了: {db_path}")
 
 
@@ -258,6 +266,15 @@ def record_notion_synced(db_path: Path, job_id: int) -> None:
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = ?""",
             (job_id,),
+        )
+
+
+def record_post_error(db_path: Path, job_id: int, message: str | None) -> None:
+    """まとめ生成・同期など後処理の失敗内容を記録する（None でクリア）。"""
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE jobs SET post_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (message, job_id),
         )
 
 

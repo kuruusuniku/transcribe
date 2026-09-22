@@ -22,6 +22,7 @@ from .state import (
     get_source_type,
     record_error,
     record_notion_synced,
+    record_post_error,
     record_summarized,
     record_synced,
     reset_for_retry,
@@ -261,7 +262,10 @@ def _run_job(
     update_status(db, job_id, "done", output_dir=str(job_output_dir))
     logger.info(f"[job {job_id}] 完了: {job_output_dir}")
 
-    # 自動まとめ生成（best-effort: 失敗してもジョブは done のまま）
+    # 後処理（best-effort: 失敗してもジョブは done のまま。失敗内容は post_error に記録し通知で可視化）
+    post_errors: list[str] = []
+
+    # 自動まとめ生成
     if cfg.summarize.enabled and cfg.summarize.resolve_api_key():
         try:
             summary_path = generate_summary(
@@ -277,6 +281,7 @@ def _run_job(
                 logger.info(f"[job {job_id}] まとめ生成完了: {summary_path}")
         except Exception as e:
             logger.warning(f"[job {job_id}] まとめ生成失敗（文字起こしは完了済み）: {e}")
+            post_errors.append(f"まとめ生成: {e}")
 
     # Google Docs 自動同期
     if cfg.google_docs.enabled and cfg.google_docs.root_folder_id:
@@ -288,6 +293,7 @@ def _run_job(
                 logger.info(f"[job {job_id}] Google Docs に同期完了")
         except Exception as e:
             logger.warning(f"[job {job_id}] Google Docs 同期失敗（文字起こしは完了済み）: {e}")
+            post_errors.append(f"Google Docs 同期: {e}")
 
     # Notion 自動同期
     if cfg.notion.enabled and cfg.notion.database_id and cfg.notion.token:
@@ -299,6 +305,9 @@ def _run_job(
                 logger.info(f"[job {job_id}] Notion に同期完了")
         except Exception as e:
             logger.warning(f"[job {job_id}] Notion 同期失敗（文字起こしは完了済み）: {e}")
+            post_errors.append(f"Notion 同期: {e}")
+
+    record_post_error(db, job_id, "\n".join(post_errors) or None)
 
     # 一時ファイル掃除（分離済み音声のみ削除、元音声は保持）
     if audio_separation_used and audio_path != original_audio_path:
