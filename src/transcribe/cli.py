@@ -648,6 +648,28 @@ def doctor(
         raise typer.Exit(1)
 
 
+@app.command()
+def reformat(
+    job_id: int = typer.Argument(..., help="対象ジョブID"),
+) -> None:
+    """segments.json から transcript.md / meta.json を作り直す（再文字起こしはしない）"""
+    from .stages.formatter import rebuild_outputs
+
+    cfg, _ = _load_cfg_and_glossary()
+    job = get_job_by_id(cfg.state_db, job_id)
+    if job is None:
+        console.print(f"[red]ジョブ {job_id} が見つかりません[/red]")
+        raise typer.Exit(1)
+    output_dir = Path(job["output_dir"]) if job["output_dir"] else None
+    if output_dir is None or not (output_dir / "segments.json").exists():
+        console.print(f"[red]segments.json が見つかりません: {output_dir}[/red]")
+        raise typer.Exit(1)
+
+    count = rebuild_outputs(output_dir, cfg)
+    console.print(f"[green]書き起こしを作り直しました（{count} セグメント）: {output_dir}[/green]")
+    console.print("まとめにも反映するには `transcribe resume-post` か Web UI の「まとめを作り直す」を実行してください。")
+
+
 @app.command("resume-post")
 def resume_post(
     job_id: int = typer.Argument(..., help="対象ジョブID"),

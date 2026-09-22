@@ -53,7 +53,8 @@ class TranscriptionConfig:
 
 @dataclass
 class OutputConfig:
-    timestamp_interval_seconds: int = 60
+    timestamp_interval_seconds: int = 60  # 1 区切りの最大の長さ（これを超えたら次の発話から区切る）
+    paragraph_gap_seconds: float = 2.0    # この長さ以上の無音があれば区切る
     confidence_threshold: float = -1.0
 
 
@@ -211,6 +212,7 @@ def load_config(config_path: Path) -> AppConfig:
     out_raw = raw.get("output", {})
     output = OutputConfig(
         timestamp_interval_seconds=out_raw.get("timestamp_interval_seconds", 60),
+        paragraph_gap_seconds=out_raw.get("paragraph_gap_seconds", 2.0),
         confidence_threshold=out_raw.get("confidence_threshold", -1.0),
     )
 

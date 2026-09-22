@@ -414,7 +414,8 @@ BGM が小さい動画では `false` 推奨。有効化すると 1 時間動画�
 
 | キー | デフォルト | 説明 |
 |---|---|---|
-| `timestamp_interval_seconds` | `60` | transcript.md に挿入するタイムスタンプの間隔（秒） |
+| `timestamp_interval_seconds` | `60` | 1 区切りの最大の長さ（秒）。見出しの時刻は実際に話し始めた時刻 |
+| `paragraph_gap_seconds` | `2.0` | この長さ以上の無音があれば区切る |
 | `confidence_threshold` | `-1.0` | この値を下回るセグメントに `⚠️[要確認: 低信頼]` を付与。`-1.0` は事実上無効 |
 
 ---

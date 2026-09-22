@@ -799,6 +799,11 @@ function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
                     Notion / Docs に登録し直す<small>失敗・未実行の後処理だけを実行します</small>
                   </button>
                 )}
+                {job.status === 'done' && (
+                  <button onClick={() => run('/api/reformat', { job_id: job.id }, '書き起こしを作り直します')}>
+                    書き起こしの表示を作り直す<small>文字起こしはやり直さず、区切りや見出しだけ作り直します</small>
+                  </button>
+                )}
                 <button onClick={() => { setMenuOpen(false); setConfirm('rerun'); }}>
                   最初からやり直す<small>ダウンロードから全部やり直します（既存の出力はバックアップ）</small>
                 </button>

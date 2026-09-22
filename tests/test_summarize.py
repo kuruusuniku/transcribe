@@ -1004,3 +1004,40 @@ def test_truncated_but_recoverable_summary_is_saved(tmp_path):
     saved = path.read_text(encoding="utf-8")
     assert saved.count("## 1. 講義の全体要約") == 1
     assert not (tmp_path / "summary.truncated.md").exists()
+
+
+# ─── まとめの時刻を実際の発話開始時刻に合わせる ───────────────────────────
+
+
+def test_snap_timestamps_to_actual_starts():
+    from transcribe.summarize import snap_timestamps
+
+    starts = [0.0, 62.4, 455.2]
+    text = "### 導入 [01:02]\n* 「引用」 [07:30]\n総時間: 01:06:40\n"
+    fixed, snapped = snap_timestamps(text, starts)
+
+    assert snapped == 2
+    assert "[00:01:02]" in fixed
+    assert "[00:07:35]" in fixed
+    assert "総時間: 01:06:40" in fixed  # 総時間は長さなので変更しない
+
+
+def test_snap_timestamps_rewrites_youtube_link():
+    from transcribe.summarize import snap_timestamps
+
+    text = "#### 方法 [[00:07:30](https://www.youtube.com/watch?v=abc&t=450s)]\n"
+    fixed, snapped = snap_timestamps(text, [455.2], video_id="abc")
+
+    assert snapped == 1
+    assert "t=455s" in fixed
+    assert "[00:07:35]" in fixed
+
+
+def test_snap_timestamps_keeps_far_times():
+    from transcribe.summarize import snap_timestamps
+
+    text = "[00:50:00]\n"
+    fixed, snapped = snap_timestamps(text, [0.0, 10.0])
+
+    assert snapped == 0
+    assert fixed.strip() == "[00:50:00]"

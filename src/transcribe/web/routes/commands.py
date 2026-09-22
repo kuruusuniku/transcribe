@@ -122,6 +122,16 @@ class ResumePostBody(BaseModel):
     job_id: int
 
 
+class ReformatBody(BaseModel):
+    job_id: int
+
+
+@router.post("/reformat")
+async def reformat(body: ReformatBody):
+    task_id = start_task(transcribe_cmd("reformat", str(body.job_id)))
+    return {"task_id": task_id}
+
+
 @router.post("/resume-post")
 async def resume_post(body: ResumePostBody):
     task_id = start_task(transcribe_cmd("resume-post", str(body.job_id)))

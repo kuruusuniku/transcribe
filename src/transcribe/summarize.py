@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 from pathlib import Path
 
 from .config import SummarizeConfig
+from .utils import format_timestamp_hms, youtube_url_with_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,82 @@ def _drop_incomplete_table(text: str) -> str:
                 lines.pop()
 
     return "\n".join(lines).rstrip() + "\n" if lines else text
+
+
+_LINKED_TIME_RE = re.compile(r"\[(\d{1,2}:[0-5]\d(?::[0-5]\d)?)\]\((https?://[^)\s]+)\)")
+_TIME_RE = re.compile(r"(?<![\d:])(\d{1,2}):([0-5]\d)(?::([0-5]\d))?(?![\d:])")
+_SNAP_TOLERANCE_SECONDS = 180.0
+
+
+def _time_to_seconds(text: str) -> int:
+    parts = [int(p) for p in text.split(":")]
+    if len(parts) == 3:
+        h, m, s = parts
+    else:
+        h, (m, s) = 0, parts
+    return h * 3600 + m * 60 + s
+
+
+def _nearest_start(seconds: int, starts: list[float]) -> float | None:
+    """実際に話し始めた時刻のうち、最も近いものを返す（離れすぎていれば None）。"""
+    if not starts:
+        return None
+    nearest = min(starts, key=lambda s: abs(s - seconds))
+    return nearest if abs(nearest - seconds) <= _SNAP_TOLERANCE_SECONDS else None
+
+
+def snap_timestamps(text: str, starts: list[float], *, video_id: str | None = None) -> tuple[str, int]:
+    """まとめ内の時刻を、実際に話し始めた時刻（セグメント開始）に合わせる。
+
+    LLM は書き起こしにない中間の時刻を書くことがあるため、最も近い実在の時刻へ寄せる。
+    YouTube のリンクも同じ秒数に貼り直す。(整形後テキスト, 補正した数) を返す。
+    """
+    snapped = 0
+
+    def _fix(seconds: int) -> float | None:
+        return _nearest_start(seconds, starts)
+
+    def _replace_linked(m: re.Match) -> str:
+        nonlocal snapped
+        actual = _fix(_time_to_seconds(m.group(1)))
+        if actual is None:
+            return m.group(0)
+        snapped += 1
+        label = format_timestamp_hms(actual)
+        url = youtube_url_with_timestamp(video_id, actual) if video_id else re.sub(
+            r"([?&]t=)\d+s?", lambda t: f"{t.group(1)}{int(actual)}s", m.group(2)
+        )
+        return f"[{label}]({url})"
+
+    def _replace_bare(m: re.Match) -> str:
+        nonlocal snapped
+        actual = _fix(_time_to_seconds(m.group(0)))
+        if actual is None:
+            return m.group(0)
+        snapped += 1
+        return format_timestamp_hms(actual)
+
+    out_lines = []
+    for line in text.splitlines():
+        if "総時間" in line:  # 総時間は時刻ではなく長さなので触らない
+            out_lines.append(line)
+            continue
+        fixed = _LINKED_TIME_RE.sub(_replace_linked, line)
+        fixed = _TIME_RE.sub(_replace_bare, fixed)
+        out_lines.append(fixed)
+    return "\n".join(out_lines) + ("\n" if text.endswith("\n") else ""), snapped
+
+
+def _segment_starts(output_dir: Path) -> tuple[list[float], str | None]:
+    """segments.json から実際の発話開始時刻と video_id を読む。"""
+    path = output_dir / "segments.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return [], None
+    starts = [float(s["start"]) for s in data.get("segments", []) if "start" in s]
+    video_id = data.get("video_id") if data.get("source_type") != "local" else None
+    return starts, video_id
 
 
 def _looks_complete(text: str) -> bool:
@@ -141,7 +219,8 @@ SYSTEM_PROMPT_BASE = """\
 - 「メタデータ・タグ」「タイムスタンプ付きまとめ」「マイクロラーニング用チャプター分割表」の各セクションで、書き起こしのタイムスタンプ情報を参照し、必ず時刻表記を含めること。
 - YouTube 動画の場合: タイムスタンプは `[[HH:MM:SS](URL?t=秒数)]` 形式でリンクを生成する。URL は提供される video_url に `&t={秒数}s` を付与する。Google 検索の URL を余計に付与してはいけない。
 - ローカルファイルの場合: リンクなしの `[HH:MM:SS]` のみで表記する。
-- 書き起こしの見出しの時刻は `HH:MM:SS` 形式である。`MM:SS` の 2 つ組で書かれている場合は「分:秒」を意味する（1 時間未満）。時間と分を取り違えないこと。
+- 書き起こしの見出しの時刻は `HH:MM:SS` 形式で、その区切りで実際に話し始めた時刻である。`MM:SS` の 2 つ組の場合は「分:秒」を意味する（1 時間未満）。時間と分を取り違えないこと。
+- まとめで使う時刻は、書き起こしの見出しに実在する時刻をそのまま使う。中間の時刻（例: 見出しにない 07:30）を推測して書かないこと。
 
 ## D. 用語統一
 
@@ -235,7 +314,8 @@ LECTURE_SYSTEM_PROMPT = """\
 
 - 「タイムスタンプ付きまとめ」「印象的な言葉」「章立て表」では、書き起こしのタイムスタンプを参照し必ず時刻を含める。
 - 音声ファイルのため、タイムスタンプはリンクなしの `[HH:MM:SS]` 形式で表記する。
-- 書き起こしの見出しの時刻は `HH:MM:SS` 形式である。`MM:SS` の 2 つ組で書かれている場合は「分:秒」を意味する（1 時間未満）。時間と分を取り違えないこと。
+- 書き起こしの見出しの時刻は `HH:MM:SS` 形式で、その区切りで実際に話し始めた時刻である。`MM:SS` の 2 つ組の場合は「分:秒」を意味する（1 時間未満）。時間と分を取り違えないこと。
+- まとめで使う時刻は、書き起こしの見出しに実在する時刻をそのまま使う。中間の時刻を推測して書かないこと。
 
 ## D. 用語統一
 
@@ -502,6 +582,11 @@ def generate_summary(
     summary_text, repaired = sanitize_summary(summary_text)
     if repaired:
         logger.warning("まとめの出力に崩れ（繰り返し）があったため整形しました")
+
+    starts, video_id = _segment_starts(output_dir)
+    summary_text, snapped = snap_timestamps(summary_text, starts, video_id=video_id)
+    if snapped:
+        logger.info(f"まとめ内の時刻 {snapped} 件を実際の発話開始時刻に合わせました")
 
     if not summary_text.strip():
         logger.warning(f"まとめ結果が空でした: {output_dir}")

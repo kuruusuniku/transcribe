@@ -53,6 +53,8 @@ def describe_command(args: list[str]) -> str:
         return f"再開: ジョブ #{rest[0]}" if rest else "再開"
     if head == "rerun":
         return f"最初からやり直す: ジョブ #{rest[0]}" if rest else "最初からやり直す"
+    if head == "reformat":
+        return f"書き起こしの作り直し: ジョブ #{rest[0]}" if rest else "書き起こしの作り直し"
     if head == "resume-post":
         return f"後処理のやり直し: ジョブ #{rest[0]}" if rest else "後処理のやり直し"
     if head == "summarize":
