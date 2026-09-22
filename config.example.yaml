@@ -51,8 +51,9 @@ transcription:
   # initial_prompt は glossary.yaml から自動生成
 
 output:
-  timestamp_interval_seconds: 60   # 1 区切りの最大の長さ（秒）。見出しの時刻は実際に話し始めた時刻
-  paragraph_gap_seconds: 2.0       # この長さ以上の無音があれば区切る
+  timestamp_interval_seconds: 30   # 1 区切りの最大の長さ（秒）。見出しの時刻は実際に話し始めた時刻
+  paragraph_gap_seconds: 1.0       # この長さ以上の無音があれば区切る
+  segment_timestamps: false        # true にすると各発言の先頭にも実際の開始時刻を付ける
   confidence_threshold: -1.0
 
 # ローカルファイル対応

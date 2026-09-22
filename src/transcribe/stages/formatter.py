@@ -216,14 +216,15 @@ def _write_markdown(
         lines.append("")
 
         for seg in group:
+            prefix = f"[{format_timestamp_hms(seg.start)}] " if cfg.output.segment_timestamps else ""
             if seg.original_text is not None:
-                lines.append(seg.text)
+                lines.append(f"{prefix}{seg.text}")
             elif seg.low_confidence:
-                lines.append(f"⚠️[要確認: 低信頼] {seg.text}")
+                lines.append(f"{prefix}⚠️[要確認: 低信頼] {seg.text}")
             elif seg.important_term_hit and seg.no_speech_prob > 0.5:
-                lines.append(f"⚠️[要注意: 無音疑い] {seg.text}")
+                lines.append(f"{prefix}⚠️[要注意: 無音疑い] {seg.text}")
             else:
-                lines.append(seg.text)
+                lines.append(f"{prefix}{seg.text}")
 
         lines.append("")
 
