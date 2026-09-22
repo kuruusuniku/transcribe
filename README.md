@@ -2,16 +2,25 @@
 
 ## 概要
 
-YouTube 限定公開動画・ローカル音声ファイルの自動文字起こし、LLM による構造化まとめ生成、Google Docs 同期を一気通貫で行うツール。
+YouTube 限定公開動画・ローカル音声ファイルを入れておくと、**文字起こし → LLM による構造化まとめ → Notion / Google Docs への登録**まで自動で行うツール。
 
-夜間バッチで実行し、翌朝 Google Docs で確認する運用を想定しています。
+使う人がやることは「① 入れる → ② 待つ → ③ 要対応だけ確認する」の 3 つだけ。
+
+## ドキュメント
+
+| 読みたいこと | ファイル |
+|---|---|
+| 使い方（まずはここ） | [GETTING_STARTED.md](GETTING_STARTED.md) |
+| うまく動かないとき | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
+| Web UI・コマンド・設定の詳細 | [USAGE.md](USAGE.md) |
+| 開発者向けの構成・経緯 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) / [HANDOVER.md](HANDOVER.md) |
 
 ## セットアップ
 
 1. **前提**: Python 3.13+, uv, Firefox, NVIDIA GPU (CUDA)
 2. **依存インストール**: `uv sync`
 3. **設定ファイル作成**: `cp config.example.yaml config.yaml`（PowerShell では `Copy-Item config.example.yaml config.yaml`）
-4. **config.yaml の各セクションを環境に合わせて編集**
+4. **config.yaml の各セクションを環境に合わせて編集**（編集後は `uv run transcribe doctor` で確認）
    - `youtube.cookies_from_browser`: Windows では `firefox`（Chrome 127+ は Cookie 暗号化で不可）
    - `transcription.compute_type`: GTX 1050 Ti 等の古い GPU は `int8`、RTX 系 VRAM 4-6GB は `int8_float16`、8GB+ は `float16`
    - `audio_separation.enabled`: `false` 推奨（後述「実運用での知見」参照）
@@ -50,25 +59,24 @@ YouTube 限定公開動画・ローカル音声ファイルの自動文字起こ
 | `transcribe delete <id> [--files]` | ジョブを DB から削除（`--files` で出力ディレクトリも削除、確認あり） |
 | `transcribe sync-notion [--all \| --id N]` | Notion データベースに同期 |
 | `transcribe web [--host] [--port]` | Web UI を起動（http://localhost:8000） |
-| `transcribe status` | ジョブ一覧表示 |
+| `transcribe status [--id N]` | ジョブ一覧表示（`--id` でステージ別の状態） |
+| `transcribe resume-post <id>` | 失敗・未実行の後処理（まとめ / Docs / Notion）だけやり直す |
+| `transcribe doctor [--test]` | 設定と外部連携の診断 |
 | `transcribe clean` | 一時ファイル削除 |
 
 ### Web UI
 
 `uv run transcribe web` で http://localhost:8000 を起動。
-ブラウザから全コマンドを操作でき、ログをリアルタイムで確認できる。
-mp3/m4a のアップロード・D&Dによる変換キュー・transcript.md / summary.md のインライン閲覧が可能。
-D&Dゾーンにファイルをドロップして「m4a→mp3変換」または「文字起こし」を選択できる。
-変換結果は File System Access API で指定フォルダに順次保存される（Brave/Chrome/Edge）。
+「＋ 追加」で URL / 音声ファイルを入れると自動で処理され、左の「要対応」に出たものだけ確認すればよい。
+文字起こし画面で誤認識した言葉を選択すると、その場で用語辞書に登録して修正できる。
+詳細は [USAGE.md の Web UI](USAGE.md#web-ui) を参照。
 
 ## 運用フロー
 
 ### 日常運用
 
-1. `urls.txt` に動画 URL を追加
-2. `uv run transcribe run`（寝る前に実行）
-3. 翌朝 Google Docs で transcript と summary を確認
-4. 誤認識を見つけたら `glossary.yaml` に追加
+- **Web UI**: 「＋ 追加」から URL / ファイルを入れる → 翌朝「要対応」を確認 → 誤認識は文字起こし画面から用語辞書に登録
+- **夜間バッチ（CLI）**: `urls.txt` に URL を追加 → `uv run transcribe run`（寝る前）→ 翌朝 Notion / Google Docs と完了メールを確認
 
 ### ローカル音声ファイル
 
@@ -78,9 +86,11 @@ D&Dゾーンにファイルをドロップして「m4a→mp3変換」または�
 
 ### 失敗したジョブの対処
 
-- `uv run transcribe status` で failed を確認
-- `uv run transcribe retry <id>` で手動リトライ
+- `uv run transcribe status --id <id>` でどの段階で失敗したかを確認
+- `uv run transcribe retry <id>` で失敗したところから再開（文字起こし済みなら Whisper は再実行しない）
+- まとめ・同期だけ失敗した場合は `uv run transcribe resume-post <id>`
 - 解決しない場合は `uv run transcribe rerun <id>` で最初から再実行
+- 症状別の対処は [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ### 不要なジョブの削除
 
