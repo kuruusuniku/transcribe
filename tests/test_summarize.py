@@ -894,3 +894,29 @@ def test_pipeline_summary_failure_does_not_fail_job(db):
     job = get_job_by_id(db, job_id)
     assert job["status"] == "done"
     assert job["summarized_at"] is None
+
+
+# ─── 出力トークン上限で切れた場合は summary.md を書かない ───────────────
+
+
+def test_truncated_claude_summary_not_saved(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    import pytest
+
+    from transcribe.config import SummarizeConfig
+    from transcribe.summarize import SummaryTruncatedError, generate_summary
+
+    (tmp_path / "transcript.md").write_text("[00:00] テスト", encoding="utf-8")
+    cfg = SummarizeConfig(enabled=True, provider="claude", anthropic_api_key="k")
+
+    block = MagicMock(type="text", text="途中まで")
+    message = MagicMock(content=[block], stop_reason="max_tokens")
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value.messages.create.return_value = message
+        with pytest.raises(SummaryTruncatedError):
+            generate_summary(tmp_path, "https://x", "t", cfg, [])
+
+    assert not (tmp_path / "summary.md").exists()
+    assert (tmp_path / "summary.truncated.md").read_text(encoding="utf-8") == "途中まで"
+

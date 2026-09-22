@@ -9,6 +9,17 @@ from .config import SummarizeConfig
 logger = logging.getLogger(__name__)
 
 
+class SummaryTruncatedError(RuntimeError):
+    """出力トークン上限に達し、まとめが途中で切れた。"""
+
+    def __init__(self, provider: str, partial_text: str) -> None:
+        super().__init__(
+            f"{provider} の出力が max_output_tokens に達し途中で切れました。"
+            "config.yaml の summarize.max_output_tokens を増やしてください。"
+        )
+        self.partial_text = partial_text
+
+
 _GEMINI_503_RETRY_BACKOFFS_SEC = (5, 15, 30)
 _CLAUDE_503_RETRY_BACKOFFS_SEC = (5, 10, 20)
 
@@ -211,7 +222,13 @@ def call_gemini(
                 temperature=cfg.temperature,
             ),
         )
-        return response.text or ""
+        text = response.text or ""
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            reason = getattr(candidates[0], "finish_reason", None)
+            if getattr(reason, "name", reason) == "MAX_TOKENS":
+                raise SummaryTruncatedError("Gemini", text)
+        return text
 
     return _call_with_retry(_invoke, "Gemini", _GEMINI_503_RETRY_BACKOFFS_SEC)
 
@@ -244,7 +261,10 @@ def call_claude(
         if not message.content:
             return ""
         texts = [b.text for b in message.content if b.type == "text"]
-        return "\n".join(texts)
+        text = "\n".join(texts)
+        if getattr(message, "stop_reason", None) == "max_tokens":
+            raise SummaryTruncatedError("Claude", text)
+        return text
 
     return _call_with_retry(_invoke, "Claude", _CLAUDE_503_RETRY_BACKOFFS_SEC)
 
@@ -275,12 +295,19 @@ def generate_summary(
         source_type=source_type,
     )
 
-    if cfg.provider == "gemini":
-        summary_text = call_gemini(system_prompt, user_message, cfg)
-    elif cfg.provider == "claude":
-        summary_text = call_claude(system_prompt, user_message, cfg)
-    else:
-        raise ValueError(f"未対応の provider: {cfg.provider}")
+    try:
+        if cfg.provider == "gemini":
+            summary_text = call_gemini(system_prompt, user_message, cfg)
+        elif cfg.provider == "claude":
+            summary_text = call_claude(system_prompt, user_message, cfg)
+        else:
+            raise ValueError(f"未対応の provider: {cfg.provider}")
+    except SummaryTruncatedError as e:
+        # 不完全なまとめを summary.md として扱わない（Notion 同期もされない）。確認用に別名で残す。
+        truncated_path = output_dir / "summary.truncated.md"
+        truncated_path.write_text(e.partial_text, encoding="utf-8")
+        logger.error(f"{e} 途中までの出力: {truncated_path}")
+        raise
 
     if not summary_text.strip():
         logger.warning(f"まとめ結果が空でした: {output_dir}")
@@ -288,5 +315,6 @@ def generate_summary(
 
     summary_path = output_dir / "summary.md"
     summary_path.write_text(summary_text, encoding="utf-8")
+    (output_dir / "summary.truncated.md").unlink(missing_ok=True)
     logger.info(f"summary.md 書き出し: {summary_path}")
     return summary_path
