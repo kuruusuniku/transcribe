@@ -133,5 +133,5 @@ summarize:
   gemini_model: "gemini-2.5-flash"
   anthropic_api_key: ""             # または環境変数 ANTHROPIC_API_KEY
   anthropic_model: "claude-haiku-4-5-20251001"
-  max_output_tokens: 8192
+  max_output_tokens: 16384   # 長い講義・動画で足りない場合は増やす（Gemini 2.5 Flash は 65536 まで）
   temperature: 0.3                  # 構造化まとめには低めが推奨

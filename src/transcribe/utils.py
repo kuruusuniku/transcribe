@@ -16,6 +16,12 @@ def format_timestamp(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def format_timestamp_hms(seconds: float) -> str:
+    """秒数を常に HH:MM:SS 形式に変換する（MM:SS との取り違えを防ぐため見出しで使う）。"""
+    total = int(seconds)
+    return f"{total // 3600:02d}:{(total % 3600) // 60:02d}:{total % 60:02d}"
+
+
 def youtube_url_with_timestamp(video_id: str, seconds: float) -> str:
     t = int(seconds)
     return f"https://www.youtube.com/watch?v={video_id}&t={t}s"

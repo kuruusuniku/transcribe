@@ -8,7 +8,7 @@ from typing import Iterable
 
 from ..config import AppConfig
 from ..postprocess import ProcessedSegment
-from ..utils import format_timestamp, youtube_url_with_timestamp
+from ..utils import format_timestamp_hms, youtube_url_with_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ def _write_markdown(
         buckets.setdefault(bucket_key, []).append(seg)
 
     for bucket_start in sorted(buckets.keys()):
-        ts_label = format_timestamp(bucket_start)
+        ts_label = format_timestamp_hms(bucket_start)
         if is_local:
             lines.append(f"## {ts_label}")
         else:

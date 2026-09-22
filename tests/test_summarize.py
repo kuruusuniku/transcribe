@@ -928,3 +928,16 @@ def test_truncated_claude_summary_not_saved(tmp_path):
     assert not (tmp_path / "summary.md").exists()
     assert (tmp_path / "summary.truncated.md").read_text(encoding="utf-8") == "途中まで"
 
+
+
+def test_prompts_explain_timestamp_format(sample_glossary):
+    """MM:SS を時:分と取り違えないための注意書きが両方のプロンプトに入っていること。"""
+    for source_type in ("youtube", "local"):
+        system, _ = build_prompt(
+            transcript_text="",
+            glossary_entries=sample_glossary,
+            video_url="https://x",
+            video_title="t",
+            source_type=source_type,
+        )
+        assert "`MM:SS` の 2 つ組で書かれている場合は「分:秒」を意味する" in system

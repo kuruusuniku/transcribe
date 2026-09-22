@@ -34,3 +34,11 @@ def test_normalize_variants(url):
 )
 def test_non_video_urls_unchanged(url):
     assert normalize_youtube_url(url) == url
+
+
+def test_format_timestamp_hms_always_has_hours():
+    from transcribe.utils import format_timestamp_hms
+
+    assert format_timestamp_hms(0) == "00:00:00"
+    assert format_timestamp_hms(300) == "00:05:00"
+    assert format_timestamp_hms(3725) == "01:02:05"

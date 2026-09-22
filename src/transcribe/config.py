@@ -87,7 +87,7 @@ class SummarizeConfig:
     gemini_model: str = "gemini-2.5-flash"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-4-5-20251001"
-    max_output_tokens: int = 8192
+    max_output_tokens: int = 16384
     temperature: float = 0.3
 
     def resolve_api_key(self) -> str:
@@ -244,7 +244,7 @@ def load_config(config_path: Path) -> AppConfig:
         gemini_model=sum_raw.get("gemini_model", "gemini-2.5-flash"),
         anthropic_api_key=sum_raw.get("anthropic_api_key", ""),
         anthropic_model=sum_raw.get("anthropic_model", "claude-haiku-4-5-20251001"),
-        max_output_tokens=sum_raw.get("max_output_tokens", 8192),
+        max_output_tokens=sum_raw.get("max_output_tokens", 16384),
         temperature=sum_raw.get("temperature", 0.3),
     )
 
