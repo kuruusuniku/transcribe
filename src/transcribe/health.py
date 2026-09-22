@@ -145,27 +145,43 @@ def run_connection_test(cfg: AppConfig, key: str) -> Check:
     try:
         if key == "notion":
             n = cfg.notion
-            names = []
-            for db_id in filter(None, [n.database_id, n.local_database_id]):
+            results = []
+            failed = False
+            for label, db_id in (("動画 DB", n.database_id), ("ローカル音声 DB", n.local_database_id)):
+                if not db_id:
+                    continue
                 resp = httpx.get(
                     f"https://api.notion.com/v1/databases/{db_id}",
                     headers={"Authorization": f"Bearer {n.token}", "Notion-Version": "2022-06-28"},
                     timeout=15,
                 )
-                resp.raise_for_status()
-                title = "".join(t.get("plain_text", "") for t in resp.json().get("title", []))
-                names.append(title or db_id)
-            return Check("notion", "Notion 同期", "ok", "接続成功: " + " / ".join(names))
+                if resp.status_code == 200:
+                    title = "".join(t.get("plain_text", "") for t in resp.json().get("title", []))
+                    results.append(f"{label}「{title or db_id}」OK")
+                elif resp.status_code in (403, 404):
+                    failed = True
+                    results.append(
+                        f"{label}（{db_id}）にアクセスできません。ID が正しいか、"
+                        "データベースの「…」→「接続」でインテグレーションを追加しているか確認してください"
+                    )
+                elif resp.status_code == 401:
+                    return Check("notion", "Notion 同期", "error", "トークンが無効です（notion.token を確認してください）")
+                else:
+                    resp.raise_for_status()
+            return Check("notion", "Notion 同期", "error" if failed else "ok", " / ".join(results))
         if key == "summarize":
             s = cfg.summarize
             if s.provider == "gemini":
                 from google import genai  # noqa: PLC0415
 
-                genai.Client(api_key=s.resolve_api_key()).models.get(model=s.gemini_model)
+                # クライアントを変数に保持しないと、リクエスト中に破棄されて "client has been closed" になる
+                client = genai.Client(api_key=s.resolve_api_key())
+                client.models.get(model=s.gemini_model)
                 return Check("summarize", "まとめ生成（LLM）", "ok", f"接続成功: {s.gemini_model}")
             import anthropic  # noqa: PLC0415
 
-            anthropic.Anthropic(api_key=s.resolve_api_key()).models.retrieve(s.anthropic_model)
+            client = anthropic.Anthropic(api_key=s.resolve_api_key())
+            client.models.retrieve(s.anthropic_model)
             return Check("summarize", "まとめ生成（LLM）", "ok", f"接続成功: {s.anthropic_model}")
     except Exception as e:
         return Check(key, _TEST_LABELS.get(key, key), "error", f"接続失敗: {type(e).__name__}: {e}")

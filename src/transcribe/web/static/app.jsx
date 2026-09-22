@@ -40,8 +40,16 @@ const POST_STAGE_KEYS = { summarize: 'summarize', docs_sync: 'docs', notion_sync
 
 // ─── ユーティリティ ────────────────────────────────────────────────────────
 
+const OFFLINE_MESSAGE = 'サーバーに接続できません。Web UI のサーバー（uv run transcribe web）が起動しているか確認してください。';
+
 async function apiFetch(path, options = {}) {
-  const res = await fetch(path, options);
+  let res;
+  try {
+    res = await fetch(path, options);
+  } catch (_) {
+    // fetch 自体の失敗（"Failed to fetch"）はサーバー停止・ネットワーク断
+    throw new Error(OFFLINE_MESSAGE);
+  }
   if (!res.ok) {
     let msg = await res.text();
     try {
@@ -1213,6 +1221,7 @@ function LogPanel({ logs }) {
 function App() {
   const [jobs, setJobs] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [queue, setQueue] = useState({ running: null, pending: 0 });
   const [health, setHealth] = useState([]);
   const [view, setView] = useState('add');
@@ -1241,7 +1250,10 @@ function App() {
       setJobs([...data].reverse());
       setQueue(q);
       setLoaded(true);
-    } catch (_) {}
+      setOffline(false);
+    } catch (e) {
+      if (e.message === OFFLINE_MESSAGE) setOffline(true);
+    }
   }, []);
 
   const fetchHealth = useCallback(() => {
@@ -1328,6 +1340,11 @@ function App() {
         <button onClick={() => setShowHelp(true)} title="使い方">？ 使い方</button>
         <button className="ghost" onClick={() => setDarkMode(d => !d)} title="表示テーマの切り替え">{darkMode ? '☀️' : '🌙'}</button>
       </header>
+      {offline && (
+        <div className="offline-banner">
+          ⚠ {OFFLINE_MESSAGE} 起動すると自動で再接続します。
+        </div>
+      )}
       <main className="app-main">
         <Sidebar jobs={jobs} filter={filter} setFilter={setFilter} selectedId={view === 'job' ? selectedJobId : null}
           onSelect={openJob} enabledPost={enabledPost} />

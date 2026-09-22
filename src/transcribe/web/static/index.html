@@ -136,6 +136,16 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    .offline-banner {
+      background: var(--failed-soft);
+      border-bottom: 1px solid var(--failed);
+      color: var(--failed);
+      padding: 6px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
     /* ── レイアウト ─────────────────────────── */
     .app-main { display: flex; flex: 1; overflow: hidden; }
     .sidebar {
