@@ -9,7 +9,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from ...config import AppConfig
@@ -72,8 +72,8 @@ async def convert_file(files: list[UploadFile] = File(...), cfg: AppConfig = Dep
             tmp_mp3 = tmp_m4a.with_suffix(".mp3")
             m4a_temps.append(tmp_m4a)
 
-            content = await upload.read()
-            tmp_m4a.write_bytes(content)
+            with tmp_m4a.open("wb") as f:
+                shutil.copyfileobj(upload.file, f)
 
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-y", "-i", str(tmp_m4a),
@@ -94,12 +94,11 @@ async def convert_file(files: list[UploadFile] = File(...), cfg: AppConfig = Dep
 
         if len(mp3_results) == 1:
             tmp_mp3, stem = mp3_results[0]
-            mp3_bytes = tmp_mp3.read_bytes()
-            tmp_mp3.unlink(missing_ok=True)
-            return StreamingResponse(
-                iter([mp3_bytes]),
+            return FileResponse(
+                str(tmp_mp3),
                 media_type="audio/mpeg",
                 headers={"Content-Disposition": "attachment"},
+                background=BackgroundTask(_unlink_many, tmp_mp3),
             )
 
         tmp_zip = cfg.work_dir / f"{uuid4().hex}.zip"
