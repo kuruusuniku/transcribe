@@ -113,6 +113,40 @@ def _read_meta(output_dir: Path) -> dict:
         return {}
 
 
+_NOTION_STATE_FILE = "notion.json"
+
+
+def _read_saved_page_id(output_dir: Path, database_id: str) -> str | None:
+    """前回同期時に保存したページ ID を返す（同期先 DB が同じ場合のみ）。"""
+    path = output_dir / _NOTION_STATE_FILE
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if data.get("database_id") != database_id:
+        return None
+    return data.get("page_id")
+
+
+def _save_page_id(output_dir: Path, database_id: str, page_id: str) -> None:
+    path = output_dir / _NOTION_STATE_FILE
+    path.write_text(
+        json.dumps({"database_id": database_id, "page_id": page_id}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _page_is_alive(client, page_id: str) -> bool:
+    try:
+        page = client.pages.retrieve(page_id=page_id)
+    except Exception as e:
+        logger.info(f"保存済み Notion ページを取得できません（新規作成します）: {e}")
+        return False
+    return not (page.get("archived") or page.get("in_trash"))
+
+
 def _extract_tags_from_summary(summary_text: str) -> list[str]:
     """summary.md の主要キーワード・メソッド種別・指導対象の身体部位 セクションからタグを抽出する。"""
     TARGET_SECTIONS = {"### 主要キーワード", "### メソッド種別", "### 指導対象の身体部位"}
@@ -255,6 +289,12 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_t
         except Exception as e:
             logger.warning(f"Notion 既存ページ検索失敗: {e}")
 
+    # URL で特定できない場合（ローカルファイル等）は前回作成したページを再利用する
+    if existing_page_id is None:
+        saved_id = _read_saved_page_id(output_dir, target_db_id)
+        if saved_id and _page_is_alive(client, saved_id):
+            existing_page_id = saved_id
+
     if existing_page_id:
         client.pages.update(page_id=existing_page_id, properties=props)
         _clear_page_body(client, existing_page_id)
@@ -283,5 +323,11 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_t
                 client.pages.update(page_id=page_id, archived=True)
                 raise
         logger.info(f"Notion ページを作成しました: {title} (id={page_id})")
+        existing_page_id = page_id
+
+    try:
+        _save_page_id(output_dir, target_db_id, existing_page_id)
+    except OSError as e:
+        logger.warning(f"Notion ページ ID の保存に失敗しました: {e}")
 
     return True

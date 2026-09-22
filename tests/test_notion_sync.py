@@ -290,6 +290,48 @@ def test_sync_to_notion_local_skips_url_search(mock_client_cls, mock_query_db, t
     mock_query_db.assert_not_called()
 
 
+# ─── sync_to_notion: ローカルファイル再同期は前回ページを更新する ──────────
+
+
+@patch("transcribe.notion_sync._query_notion_db")
+@patch("transcribe.notion_sync.Client")
+def test_sync_to_notion_local_resync_updates_saved_page(mock_client_cls, mock_query_db, tmp_path, notion_cfg):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.pages.create.return_value = {"id": "page-id"}
+    mock_client.pages.retrieve.return_value = {"id": "page-id", "archived": False}
+    mock_client.blocks.children.list.return_value = {"results": [], "has_more": False}
+
+    d = tmp_path / "local_out"
+    d.mkdir()
+    (d / "summary.md").write_text("# まとめ", encoding="utf-8")
+
+    sync_to_notion(d, "C:/audio/test.mp3", notion_cfg, "local")
+    sync_to_notion(d, "C:/audio/test.mp3", notion_cfg, "local")
+
+    assert mock_client.pages.create.call_count == 1
+    update_calls = [c for c in mock_client.pages.update.call_args_list if c.kwargs.get("page_id") == "page-id"]
+    assert len(update_calls) == 1
+
+
+@patch("transcribe.notion_sync._query_notion_db")
+@patch("transcribe.notion_sync.Client")
+def test_sync_to_notion_local_resync_recreates_archived_page(mock_client_cls, mock_query_db, tmp_path, notion_cfg):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.pages.create.return_value = {"id": "page-id"}
+    mock_client.pages.retrieve.return_value = {"id": "page-id", "archived": True}
+
+    d = tmp_path / "local_out"
+    d.mkdir()
+    (d / "summary.md").write_text("# まとめ", encoding="utf-8")
+
+    sync_to_notion(d, "C:/audio/test.mp3", notion_cfg, "local")
+    sync_to_notion(d, "C:/audio/test.mp3", notion_cfg, "local")
+
+    assert mock_client.pages.create.call_count == 2
+
+
 # ─── state.py: notion_synced_at ───────────────────────────────────────────
 
 
