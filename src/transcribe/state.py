@@ -26,6 +26,18 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+-- ステージ単位の実行状態（jobs.status はジョブ全体の進行状況、こちらは各ステージの詳細）
+CREATE TABLE IF NOT EXISTS job_stages (
+    job_id          INTEGER NOT NULL,
+    stage           TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    error           TEXT,
+    started_at      TIMESTAMP,
+    finished_at     TIMESTAMP,
+    PRIMARY KEY (job_id, stage)
+);
 """
 
 # queued / downloading / separating / transcribing / formatting / done / failed
@@ -75,13 +87,6 @@ def _migrate_notion_synced_at(conn: sqlite3.Connection) -> None:
         logger.info("マイグレーション: notion_synced_at カラムを追加しました")
 
 
-def _migrate_post_error(conn: sqlite3.Connection) -> None:
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
-    if "post_error" not in cols:
-        conn.execute("ALTER TABLE jobs ADD COLUMN post_error TEXT")
-        logger.info("マイグレーション: post_error カラムを追加しました")
-
-
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
@@ -92,7 +97,6 @@ def init_db(db_path: Path) -> None:
         _migrate_synced_at(conn)
         _migrate_summarized_at(conn)
         _migrate_notion_synced_at(conn)
-        _migrate_post_error(conn)
     logger.debug(f"SQLite 初期化完了: {db_path}")
 
 
@@ -155,6 +159,7 @@ def reset_for_rerun(db_path: Path, job_id: int) -> None:
                WHERE id = ?""",
             (job_id,),
         )
+        conn.execute("DELETE FROM job_stages WHERE job_id = ?", (job_id,))
 
 
 def update_status(
@@ -272,18 +277,112 @@ def record_notion_synced(db_path: Path, job_id: int) -> None:
         )
 
 
-def record_post_error(db_path: Path, job_id: int, message: str | None) -> None:
-    """まとめ生成・同期など後処理の失敗内容を記録する（None でクリア）。"""
+def delete_job(db_path: Path, job_id: int) -> None:
+    with _connect(db_path) as conn:
+        conn.execute("DELETE FROM job_stages WHERE job_id = ?", (job_id,))
+        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+
+
+# ─── ステージ状態 ─────────────────────────────────────────────────────────
+
+# パイプライン本体（失敗するとジョブが failed になる）
+CORE_STAGES = ("download", "separate", "transcribe", "format")
+# 後処理（best-effort: 失敗してもジョブは done のまま）
+POST_STAGES = ("summarize", "docs_sync", "notion_sync")
+STAGE_LABELS = {
+    "download": "ダウンロード",
+    "separate": "音声分離",
+    "transcribe": "文字起こし",
+    "format": "出力",
+    "summarize": "まとめ生成",
+    "docs_sync": "Google Docs 同期",
+    "notion_sync": "Notion 同期",
+}
+
+# stage status: running / done / failed / skipped
+
+
+def start_stage(db_path: Path, job_id: int, stage: str) -> None:
     with _connect(db_path) as conn:
         conn.execute(
-            "UPDATE jobs SET post_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (message, job_id),
+            """INSERT INTO job_stages (job_id, stage, status, attempts, started_at)
+               VALUES (?, ?, 'running', 1, CURRENT_TIMESTAMP)
+               ON CONFLICT(job_id, stage) DO UPDATE SET
+                   status = 'running',
+                   attempts = attempts + 1,
+                   error = NULL,
+                   started_at = CURRENT_TIMESTAMP,
+                   finished_at = NULL""",
+            (job_id, stage),
         )
 
 
-def delete_job(db_path: Path, job_id: int) -> None:
+def finish_stage(
+    db_path: Path, job_id: int, stage: str, status: str = "done", *, error: str | None = None
+) -> None:
     with _connect(db_path) as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.execute(
+            """INSERT INTO job_stages (job_id, stage, status, error, finished_at)
+               VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(job_id, stage) DO UPDATE SET
+                   status = excluded.status,
+                   error = excluded.error,
+                   finished_at = CURRENT_TIMESTAMP""",
+            (job_id, stage, status, error),
+        )
+
+
+@contextmanager
+def track_stage(db_path: Path, job_id: int, stage: str) -> Generator[None, None, None]:
+    """ステージの開始・完了・失敗を記録する。例外は記録後そのまま送出する。"""
+    start_stage(db_path, job_id, stage)
+    try:
+        yield
+    except Exception as e:
+        finish_stage(db_path, job_id, stage, "failed", error=f"{type(e).__name__}: {e}")
+        raise
+    finish_stage(db_path, job_id, stage, "done")
+
+
+def run_stage(db_path: Path, job_id: int, stage: str, fn):
+    """fn() を実行してステージ結果を記録し、fn の戻り値を返す。
+
+    戻り値が真なら done、偽なら skipped（対象ファイルなし等）。例外は failed を記録して送出する。
+    """
+    start_stage(db_path, job_id, stage)
+    try:
+        result = fn()
+    except Exception as e:
+        finish_stage(db_path, job_id, stage, "failed", error=f"{type(e).__name__}: {e}")
+        raise
+    finish_stage(db_path, job_id, stage, "done" if result else "skipped")
+    return result
+
+
+def get_job_stages(db_path: Path, job_id: int) -> list[sqlite3.Row]:
+    order = {name: i for i, name in enumerate(CORE_STAGES + POST_STAGES)}
+    with _connect(db_path) as conn:
+        rows = conn.execute("SELECT * FROM job_stages WHERE job_id = ?", (job_id,)).fetchall()
+    return sorted(rows, key=lambda r: order.get(r["stage"], len(order)))
+
+
+def reset_stages(db_path: Path, job_id: int) -> None:
+    with _connect(db_path) as conn:
+        conn.execute("DELETE FROM job_stages WHERE job_id = ?", (job_id,))
+
+
+def get_post_stage_errors(db_path: Path, job_id: int) -> str | None:
+    """失敗している後処理ステージのエラーを「ラベル: エラー」形式の複数行で返す。"""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"""SELECT stage, error FROM job_stages
+                WHERE job_id = ? AND status = 'failed'
+                  AND stage IN ({','.join('?' * len(POST_STAGES))})""",
+            (job_id, *POST_STAGES),
+        ).fetchall()
+    if not rows:
+        return None
+    return "\n".join(f"{STAGE_LABELS.get(r['stage'], r['stage'])}: {r['error'] or ''}" for r in rows)
 
 
 def get_source_type(job) -> str:

@@ -18,8 +18,11 @@ from .pipeline import run_pipeline
 from .state import (
     delete_job,
     get_all_done_jobs,
+    STAGE_LABELS,
     get_all_jobs,
     get_job_by_id,
+    get_job_stages,
+    get_post_stage_errors,
     get_job_by_url_or_id,
     get_source_type,
     get_unnotion_synced_done_jobs,
@@ -31,6 +34,7 @@ from .state import (
     record_synced,
     reset_for_retry,
     reset_for_rerun,
+    run_stage,
 )
 from .notion_sync import sync_to_notion
 from .summarize import generate_summary
@@ -128,7 +132,9 @@ def run(
             for entry in entries:
                 job = get_job_by_url_or_id(cfg.state_db, entry)
                 if job:
-                    processed_jobs.append(dict(job))
+                    job_dict = dict(job)
+                    job_dict["post_error"] = get_post_stage_errors(cfg.state_db, job["id"])
+                    processed_jobs.append(job_dict)
             if processed_jobs:
                 send_batch_report(processed_jobs, cfg)
         except Exception as e:
@@ -222,9 +228,14 @@ def convert(
 
 
 @app.command()
-def status() -> None:
-    """全ジョブの状態を表示する"""
+def status(
+    job_id: int | None = typer.Option(None, "--id", help="指定ジョブのステージ別の状態を表示"),
+) -> None:
+    """全ジョブの状態を表示する（--id でステージ別の詳細）"""
     cfg, _ = _load_cfg_and_glossary()
+    if job_id is not None:
+        _print_job_stages(cfg, job_id)
+        return
     jobs = get_all_jobs(cfg.state_db)
 
     if not jobs:
@@ -263,6 +274,36 @@ def status() -> None:
             out_dir,
         )
 
+    console.print(table)
+
+
+def _print_job_stages(cfg, job_id: int) -> None:
+    job = get_job_by_id(cfg.state_db, job_id)
+    if job is None:
+        console.print(f"[red]ジョブ {job_id} が見つかりません[/red]")
+        raise typer.Exit(1)
+
+    table = Table(title=f"job {job_id}: {job['title'] or job['url']}  ({job['status']})", show_lines=True)
+    table.add_column("Stage")
+    table.add_column("Status", style="bold")
+    table.add_column("Attempts")
+    table.add_column("Finished")
+    table.add_column("Error", no_wrap=False)
+
+    colors = {"done": "green", "failed": "red", "running": "cyan", "skipped": "dim"}
+    stages = get_job_stages(cfg.state_db, job_id)
+    if not stages:
+        console.print("[yellow]ステージ記録がありません（この機能の導入前に処理されたジョブ）[/yellow]")
+        return
+    for st in stages:
+        color = colors.get(st["status"], "white")
+        table.add_row(
+            STAGE_LABELS.get(st["stage"], st["stage"]),
+            f"[{color}]{st['status']}[/{color}]",
+            str(st["attempts"]),
+            (st["finished_at"] or "")[:16],
+            (st["error"] or "").splitlines()[0] if st["error"] else "",
+        )
     console.print(table)
 
 
@@ -350,6 +391,9 @@ def rerun(
         console.print(f"[yellow]出力ディレクトリが見つかりません（スキップ）: {output_dir}[/yellow]")
 
     reset_for_rerun(db, job["id"])
+    if job["video_id"]:
+        # 最初からやり直すため、前回失敗時の文字起こしキャッシュも破棄する
+        (cfg.work_dir / f"{job['video_id']}.whisper.json").unlink(missing_ok=True)
     console.print(f"[green]ジョブ {job['id']} ({job['url']}) を再実行します[/green]")
     run_pipeline([job["url"]], cfg, glossary)
 
@@ -396,7 +440,10 @@ def sync(
             skip_count += 1
             continue
         try:
-            doc_id = sync_job(dict(job), output_dir, cfg.google_docs)
+            doc_id = run_stage(
+                cfg.state_db, job_id, "docs_sync",
+                lambda: sync_job(dict(job), output_dir, cfg.google_docs),
+            )
             if doc_id:
                 record_synced(cfg.state_db, job_id)
                 console.print(f"  [green]✓[/green] job {job_id}: {job['title'] or job['url']}")
@@ -472,13 +519,16 @@ def summarize(
 
         source_type = get_source_type(job)
         try:
-            summary_path = generate_summary(
-                output_dir=output_dir,
-                video_url=job["url"],
-                video_title=job["title"] or "",
-                cfg=cfg.summarize,
-                glossary_entries=glossary.substitutions,
-                source_type=source_type,
+            summary_path = run_stage(
+                cfg.state_db, jid, "summarize",
+                lambda: generate_summary(
+                    output_dir=output_dir,
+                    video_url=job["url"],
+                    video_title=job["title"] or "",
+                    cfg=cfg.summarize,
+                    glossary_entries=glossary.substitutions,
+                    source_type=source_type,
+                ),
             )
             if summary_path:
                 record_summarized(cfg.state_db, jid)
@@ -550,7 +600,10 @@ def sync_notion(
             continue
         try:
             source_type = get_source_type(job)
-            synced = sync_to_notion(output_dir, job["url"], cfg.notion, source_type)
+            synced = run_stage(
+                cfg.state_db, jid, "notion_sync",
+                lambda: sync_to_notion(output_dir, job["url"], cfg.notion, source_type),
+            )
             if synced:
                 record_notion_synced(cfg.state_db, jid)
                 console.print(f"  [green]✓[/green] job {jid}: {job['title'] or job['url']}")

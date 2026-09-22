@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import shutil
 import time
 import traceback
+from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
@@ -16,16 +18,18 @@ from .postprocess import compress_repetitions, postprocess
 from .stages.downloader import download_audio
 from .stages.formatter import format_outputs
 from .stages.separator import separate_audio
-from .stages.transcriber import transcribe
+from .stages.transcriber import Segment, transcribe
 from .state import (
     get_pending_jobs,
     get_source_type,
     record_error,
     record_notion_synced,
-    record_post_error,
     record_summarized,
     record_synced,
+    finish_stage,
     reset_for_retry,
+    run_stage,
+    track_stage,
     update_status,
     upsert_job,
 )
@@ -92,6 +96,37 @@ def _copy_local_file(source_path: str, work_dir: Path) -> Path:
     return dest
 
 
+# Whisper モデルのプロセス内キャッシュ。
+# CLI（1 コマンド = 1 プロセス）では run_pipeline 終了時に解放し、
+# Web サーバー（常駐プロセス）では keep_model_loaded(True) でタスク間に再利用する。
+_MODEL_CACHE: dict = {}
+_KEEP_MODEL_LOADED = False
+
+
+def keep_model_loaded(enabled: bool) -> None:
+    global _KEEP_MODEL_LOADED
+    _KEEP_MODEL_LOADED = enabled
+
+
+def release_model_cache() -> bool:
+    """キャッシュ済みの Whisper モデルを解放する。解放した場合 True。"""
+    if "model" not in _MODEL_CACHE:
+        return False
+    del _MODEL_CACHE["model"]
+    import gc  # noqa: PLC0415
+
+    gc.collect()
+    try:
+        import torch  # noqa: PLC0415
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    logger.info("Whisper モデルを解放しました")
+    return True
+
+
 def run_pipeline(
     urls: list[str],
     cfg: AppConfig,
@@ -148,8 +183,7 @@ def _process_pending(
 
     logger.info(f"{len(pending)} 件のジョブを処理します")
 
-    # Whisper モデルをジョブ間で保持するキャッシュ
-    model_cache: dict = {}
+    model_cache = _MODEL_CACHE
 
     task_id = None
     if progress is not None:
@@ -196,9 +230,45 @@ def _process_pending(
         if progress is not None and task_id is not None:
             progress.advance(task_id)
 
-    # セッション終了時にWhisperモデルを解放
-    if "model" in model_cache:
-        del model_cache["model"]
+    if not _KEEP_MODEL_LOADED:
+        release_model_cache()
+
+
+def _transcription_signature(cfg: AppConfig, glossary: GlossaryConfig) -> dict:
+    """文字起こし結果に影響する設定。キャッシュを再利用してよいかの判定に使う。"""
+    t = cfg.transcription
+    return {
+        "model": t.model,
+        "language": t.language,
+        "beam_size": t.beam_size,
+        "condition_on_previous_text": t.condition_on_previous_text,
+        "vad_filter": t.vad_filter,
+        "vad_parameters": asdict(t.vad_parameters),
+        "initial_prompt": glossary.context.strip(),
+        "audio_separation": cfg.audio_separation.enabled,
+    }
+
+
+def _transcription_cache_path(work_dir: Path, video_id: str) -> Path:
+    return work_dir / f"{video_id}.whisper.json"
+
+
+def _load_transcription_cache(path: Path, signature: dict) -> list[Segment] | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("signature") != signature:
+            return None
+        return [Segment(**seg) for seg in data["segments"]]
+    except Exception as e:
+        logger.warning(f"文字起こしキャッシュを読み込めません（再実行します）: {e}")
+        return None
+
+
+def _save_transcription_cache(path: Path, signature: dict, segments: list[Segment]) -> None:
+    payload = {"signature": signature, "segments": [asdict(seg) for seg in segments]}
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
 def _run_job(
@@ -212,43 +282,55 @@ def _run_job(
     glossary: GlossaryConfig,
     model_cache: dict,
 ) -> None:
-    if source_type == "local":
-        # ローカルファイル: ダウンロードスキップ、work_dir にコピー
-        update_status(db, job_id, "downloading")
-        src_path = Path(url)
-        title = src_path.name
-        audio_path = _copy_local_file(url, work_dir)
-        video_id = _local_video_id(audio_path)
-        upload_date = None
-        update_status(db, job_id, "downloading", video_id=video_id, title=title)
-    else:
-        # YouTube: 既存の yt-dlp ダウンロード処理
-        update_status(db, job_id, "downloading")
-        dl_result = download_audio(url, work_dir, cfg)
-        video_id = dl_result.video_id
-        title = dl_result.title
-        audio_path = dl_result.audio_path
-        upload_date = dl_result.upload_date
-        update_status(db, job_id, "downloading", video_id=video_id, title=title)
+    # 1. 音声取得
+    update_status(db, job_id, "downloading")
+    with track_stage(db, job_id, "download"):
+        if source_type == "local":
+            # ローカルファイル: ダウンロードスキップ、work_dir にコピー
+            title = Path(url).name
+            audio_path = _copy_local_file(url, work_dir)
+            video_id = _local_video_id(audio_path)
+            upload_date = None
+        else:
+            dl_result = download_audio(url, work_dir, cfg)
+            video_id = dl_result.video_id
+            title = dl_result.title
+            audio_path = dl_result.audio_path
+            upload_date = dl_result.upload_date
+    update_status(db, job_id, "downloading", video_id=video_id, title=title)
 
-    # 2. 音声分離（オプション）
-    update_status(db, job_id, "separating")
-    original_audio_path = audio_path
-    audio_path = separate_audio(audio_path, work_dir, cfg)
+    # 2〜3. 音声分離 + 文字起こし。
+    # Whisper の生出力は work_dir にキャッシュし、後段（出力など）の失敗でリトライする際は再利用する。
+    signature = _transcription_signature(cfg, glossary)
+    cache_path = _transcription_cache_path(work_dir, video_id)
+    raw_segments = _load_transcription_cache(cache_path, signature)
     audio_separation_used = cfg.audio_separation.enabled
 
-    try:
-        # 3→4. 文字起こし + 後処理（ジェネレータチェーン: Whisper出力を逐次後処理）
-        update_status(db, job_id, "transcribing")
-        raw_gen = transcribe(audio_path, cfg, glossary, model_cache)
-        processed_gen = postprocess(raw_gen, cfg, glossary)
-        compressed_gen = compress_repetitions(processed_gen)
+    if raw_segments is not None:
+        logger.info(f"[job {job_id}] 文字起こしキャッシュを再利用: {cache_path.name}")
+        finish_stage(db, job_id, "separate", "skipped")
+        finish_stage(db, job_id, "transcribe", "skipped")
+    else:
+        update_status(db, job_id, "separating")
+        with track_stage(db, job_id, "separate"):
+            separated_path = separate_audio(audio_path, work_dir, cfg)
+        try:
+            update_status(db, job_id, "transcribing")
+            with track_stage(db, job_id, "transcribe"):
+                raw_segments = list(transcribe(separated_path, cfg, glossary, model_cache))
+                _save_transcription_cache(cache_path, signature, raw_segments)
+        finally:
+            # 分離済み音声は文字起こし後は不要。失敗時も残さない（元音声はリトライ用に保持）
+            if audio_separation_used and separated_path != audio_path:
+                separated_path.unlink(missing_ok=True)
 
-        # 5. フォーマット出力（ここでジェネレータを消費し、リスト化・ファイル書き出し）
-        update_status(db, job_id, "formatting")
-        job_output_dir = _output_dir_for(output_root, upload_date, video_id)
+    # 4. 後処理 + フォーマット出力
+    update_status(db, job_id, "formatting")
+    job_output_dir = _output_dir_for(output_root, upload_date, video_id)
+    with track_stage(db, job_id, "format"):
+        processed_gen = compress_repetitions(postprocess(raw_segments, cfg, glossary))
         segment_count = format_outputs(
-            segments=compressed_gen,
+            segments=processed_gen,
             video_id=video_id,
             url=url,
             title=title,
@@ -258,22 +340,15 @@ def _run_job(
             cfg=cfg,
             output_dir=job_output_dir,
         )
-    finally:
-        # 分離済み音声は文字起こし後は不要。失敗時も残さない（元音声はリトライ用に保持）
-        if audio_separation_used and audio_path != original_audio_path:
-            audio_path.unlink(missing_ok=True)
-
     logger.info(f"[job {job_id}] セグメント数: {segment_count}")
 
     update_status(db, job_id, "done", output_dir=str(job_output_dir))
+    cache_path.unlink(missing_ok=True)
     logger.info(f"[job {job_id}] 完了: {job_output_dir}")
 
-    # 後処理（best-effort: 失敗してもジョブは done のまま。失敗内容は post_error に記録し通知で可視化）
-    post_errors: list[str] = []
-
-    # 自動まとめ生成
+    # 5. 後処理（best-effort: 失敗してもジョブは done のまま。結果は job_stages に記録）
     if cfg.summarize.enabled and cfg.summarize.resolve_api_key():
-        try:
+        def _summarize() -> bool:
             summary_path = generate_summary(
                 output_dir=job_output_dir,
                 video_url=url,
@@ -284,33 +359,39 @@ def _run_job(
             )
             if summary_path:
                 record_summarized(db, job_id)
-                logger.info(f"[job {job_id}] まとめ生成完了: {summary_path}")
-        except Exception as e:
-            logger.warning(f"[job {job_id}] まとめ生成失敗（文字起こしは完了済み）: {e}")
-            post_errors.append(f"まとめ生成: {e}")
+            return bool(summary_path)
 
-    # Google Docs 自動同期
+        run_post_stage(db, job_id, "summarize", _summarize)
+
     if cfg.google_docs.enabled and cfg.google_docs.root_folder_id:
-        try:
-            job_dict = {"source_type": source_type}
-            doc_id = sync_job(job_dict, job_output_dir, cfg.google_docs)
+        def _docs_sync() -> bool:
+            doc_id = sync_job({"source_type": source_type}, job_output_dir, cfg.google_docs)
             if doc_id:
                 record_synced(db, job_id)
-                logger.info(f"[job {job_id}] Google Docs に同期完了")
-        except Exception as e:
-            logger.warning(f"[job {job_id}] Google Docs 同期失敗（文字起こしは完了済み）: {e}")
-            post_errors.append(f"Google Docs 同期: {e}")
+            return bool(doc_id)
 
-    # Notion 自動同期
+        run_post_stage(db, job_id, "docs_sync", _docs_sync)
+
     if cfg.notion.enabled and cfg.notion.database_id and cfg.notion.token:
-        try:
-            from .notion_sync import sync_to_notion
+        def _notion_sync() -> bool:
+            from .notion_sync import sync_to_notion  # noqa: PLC0415
+
             synced = sync_to_notion(job_output_dir, url, cfg.notion, source_type)
             if synced:
                 record_notion_synced(db, job_id)
-                logger.info(f"[job {job_id}] Notion に同期完了")
-        except Exception as e:
-            logger.warning(f"[job {job_id}] Notion 同期失敗（文字起こしは完了済み）: {e}")
-            post_errors.append(f"Notion 同期: {e}")
+            return bool(synced)
 
-    record_post_error(db, job_id, "\n".join(post_errors) or None)
+        run_post_stage(db, job_id, "notion_sync", _notion_sync)
+
+
+def run_post_stage(db: Path, job_id: int, stage: str, fn) -> bool:
+    """後処理ステージを実行し結果を job_stages に記録する。
+
+    fn が真を返せば done、偽なら skipped。例外は failed として記録して握りつぶす
+    （文字起こし結果は完了済みのため）。成功したら True を返す。
+    """
+    try:
+        return bool(run_stage(db, job_id, stage, fn))
+    except Exception as e:
+        logger.warning(f"[job {job_id}] {stage} 失敗（文字起こしは完了済み）: {e}")
+        return False

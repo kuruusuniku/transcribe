@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ...config import AppConfig
-from ...state import get_all_jobs, get_job_by_id
+from ...state import get_all_jobs, get_job_by_id, get_job_stages
 from ..deps import get_config
 
 router = APIRouter()
@@ -27,6 +27,13 @@ async def get_job(job_id: int, cfg: ConfigDep):
     if row is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return dict(row)
+
+
+@router.get("/jobs/{job_id}/stages")
+async def get_stages(job_id: int, cfg: ConfigDep):
+    if get_job_by_id(cfg.state_db, job_id) is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return [dict(r) for r in get_job_stages(cfg.state_db, job_id)]
 
 
 @router.get("/jobs/{job_id}/transcript")
