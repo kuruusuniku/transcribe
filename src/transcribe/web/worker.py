@@ -40,6 +40,15 @@ class Task:
         return describe_command(self.args)
 
 
+def _scope_label(args: list[str]) -> str:
+    """まとめ・同期コマンドの対象（特定ジョブ / 全件 / 未処理分）を表す表示。"""
+    if "--id" in args:
+        idx = args.index("--id")
+        if idx + 1 < len(args):
+            return f": ジョブ #{args[idx + 1]}"
+    return "（全件）" if "--all" in args else "（未処理分）"
+
+
 def describe_command(args: list[str]) -> str:
     if not args:
         return "処理"
@@ -57,12 +66,9 @@ def describe_command(args: list[str]) -> str:
         return f"書き起こしの作り直し: ジョブ #{rest[0]}" if rest else "書き起こしの作り直し"
     if head == "resume-post":
         return f"後処理のやり直し: ジョブ #{rest[0]}" if rest else "後処理のやり直し"
-    if head == "summarize":
-        return f"まとめ生成{' #' + rest[1] if '--id' in rest else '（未処理分）' if '--all' not in rest else '（全件）'}"
-    if head == "sync":
-        return "Google Docs 登録" + ("（全件）" if "--all" in rest else "（未処理分）")
-    if head == "sync-notion":
-        return "Notion 登録" + ("（全件）" if "--all" in rest else "（未処理分）")
+    if head in ("summarize", "sync", "sync-notion"):
+        name = {"summarize": "まとめ生成", "sync": "Google Docs 登録", "sync-notion": "Notion 登録"}[head]
+        return f"{name}{_scope_label(rest)}"
     if head == "delete":
         return f"削除: ジョブ #{rest[0]}" if rest else "削除"
     if head == "clean":

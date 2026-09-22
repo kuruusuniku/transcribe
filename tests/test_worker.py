@@ -54,6 +54,10 @@ def test_describe_command_labels():
     assert describe_command(["retry", "12"]) == "再開: ジョブ #12"
     assert describe_command(["resume-post", "7"]) == "後処理のやり直し: ジョブ #7"
     assert describe_command(["sync-notion", "--all"]) == "Notion 登録（全件）"
+    assert describe_command(["sync-notion", "--id", "52"]) == "Notion 登録: ジョブ #52"
+    assert describe_command(["sync", "--id", "52"]) == "Google Docs 登録: ジョブ #52"
+    assert describe_command(["summarize", "--id", "52"]) == "まとめ生成: ジョブ #52"
+    assert describe_command(["summarize"]) == "まとめ生成（未処理分）"
     assert describe_command(["clean"]) == "一時ファイルの削除"
 
 
