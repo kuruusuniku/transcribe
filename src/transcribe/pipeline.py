@@ -115,7 +115,7 @@ def run_pipeline(
         source_type = "local" if is_local_source(url) else "youtube"
         upsert_job(db, url, source_type=source_type)
 
-    lock = FileLock(str(db.with_suffix(".lock")))
+    lock = FileLock(str(db) + ".lock")
     try:
         lock.acquire(timeout=0)
     except Timeout:

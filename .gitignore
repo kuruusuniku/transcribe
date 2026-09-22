@@ -40,10 +40,14 @@ tmp/
 
 # ── データベース・状態ファイル ───────────
 *.db
+*.db-wal
+*.db-shm
+*.db.lock
 *.sqlite
 
 # 出力ディレクトリ全体
 data/output/
+data/uploads/
 
 # 個人の処理対象URL
 urls.txt

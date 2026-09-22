@@ -34,7 +34,8 @@ JobStatus = str
 
 @contextmanager
 def _connect(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
-    conn = sqlite3.connect(db_path)
+    # Web サーバーと CLI サブプロセスが同じ DB を同時に使うため、ロック待ちを長めに取る
+    conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -84,6 +85,8 @@ def _migrate_post_error(conn: sqlite3.Connection) -> None:
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
+        # WAL: 書き込み中も読み込み（Web UI のジョブ一覧など）がブロックされない
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
         _migrate_source_type(conn)
         _migrate_synced_at(conn)
