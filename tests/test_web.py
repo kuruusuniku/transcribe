@@ -243,7 +243,8 @@ def test_index(client):
     res = client.get("/")
     assert res.status_code == 200
     assert "text/html" in res.headers["content-type"]
-    assert b"transcribe Web UI" in res.content
+    assert b"<title>transcribe</title>" in res.content
+    assert b'src="/static/app.jsx"' in res.content
 
 
 # ─── 15. WS /ws/logs/{task_id} — ログが流れて [完了] で終了 ──────────────
