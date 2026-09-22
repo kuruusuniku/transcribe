@@ -87,7 +87,10 @@ transcribe/
 │   │   └── formatter.py
 │   └── web/              # FastAPI アプリ一式
 │       ├── app.py            # FastAPI アプリ本体
-│       ├── runner.py         # 非同期コマンド実行エンジン
+│       ├── runner.py         # タスク投入・ログ配信（task_id ↔ キュー）
+│       ├── worker.py         # 単一ワーカースレッドで CLI コマンドをインプロセス実行（Whisper モデル常駐）
+│       ├── output_router.py  # ワーカースレッドの stdout/stderr をタスクログに振り分け
+│       ├── security.py       # Origin チェック・トークン認証ミドルウェア
 │       ├── deps.py           # get_config() 依存関数
 │       ├── routes/
 │       │   ├── jobs.py       # ジョブ一覧・詳細・閲覧 API

@@ -236,11 +236,16 @@ uv run transcribe web --host 0.0.0.0 --port 8000   # LAN 内に公開（web.toke
 
 ### `status`
 
-全ジョブの状態一覧を表示する。
+全ジョブの状態一覧を表示する。`--id` を付けるとそのジョブのステージ別の状態（試行回数・エラー）を表示する。
 
 ```
 uv run transcribe status
+uv run transcribe status --id 12
 ```
+
+ステージは `download` / `separate` / `transcribe` / `format`（本体）と `summarize` / `docs_sync` / `notion_sync`（後処理）。
+後処理の失敗はジョブを failed にせず、ステージに `failed` として記録される（バッチ結果メールにも表示）。
+文字起こし後の段階で失敗してリトライする場合は、work_dir の文字起こしキャッシュを再利用して Whisper を再実行しない。
 
 各行に ID / ステータス / タイトル / 更新日時が表示される。ステータスは `queued` / `downloading` / `separating` / `transcribing` / `formatting` / `done` / `failed` のいずれか。
 
