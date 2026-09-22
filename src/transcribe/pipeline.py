@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 
 import yt_dlp.utils
+from filelock import FileLock, Timeout
 
 from .config import AppConfig, GlossaryConfig
 from .postprocess import compress_repetitions, postprocess
@@ -86,7 +87,14 @@ def run_pipeline(
     glossary: GlossaryConfig,
     *,
     progress=None,
+    resume_all: bool = False,
 ) -> None:
+    """指定URLのジョブを処理する。
+
+    resume_all=True の場合は、指定URL以外の未完了ジョブ（中断分）もまとめて処理する。
+    複数プロセスから同時に呼ばれても同じジョブを二重処理しないよう、
+    パイプライン全体をファイルロックで直列化する。
+    """
     db = cfg.state_db
     work_dir = ensure_dir(cfg.work_dir)
     output_dir = ensure_dir(cfg.output_dir)
@@ -95,7 +103,33 @@ def run_pipeline(
         source_type = "local" if is_local_source(url) else "youtube"
         upsert_job(db, url, source_type=source_type)
 
+    lock = FileLock(str(db.with_suffix(".lock")))
+    try:
+        lock.acquire(timeout=0)
+    except Timeout:
+        logger.info("別のプロセスが処理中のため、完了を待機します")
+        lock.acquire()
+    try:
+        _process_pending(urls, cfg, glossary, db, work_dir, output_dir, progress, resume_all)
+    finally:
+        lock.release()
+
+
+def _process_pending(
+    urls: list[str],
+    cfg: AppConfig,
+    glossary: GlossaryConfig,
+    db: Path,
+    work_dir: Path,
+    output_dir: Path,
+    progress,
+    resume_all: bool,
+) -> None:
+    # ロック取得後に再取得することで、待機中に他プロセスが完了させたジョブを除外する
     pending = get_pending_jobs(db)
+    if not resume_all:
+        targets = set(urls)
+        pending = [job for job in pending if job["url"] in targets]
     if not pending:
         logger.info("処理対象なし（全ジョブ完了済みまたはURLなし）")
         return

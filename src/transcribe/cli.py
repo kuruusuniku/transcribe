@@ -119,7 +119,7 @@ def run(
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        run_pipeline(entries, cfg, glossary, progress=progress)
+        run_pipeline(entries, cfg, glossary, progress=progress, resume_all=True)
 
     if cfg.notification.enabled and cfg.notification.to_email:
         try:

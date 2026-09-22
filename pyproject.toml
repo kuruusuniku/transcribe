@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
     "notion-client>=3.1.0",
+    "filelock>=3.12",
 ]
 
 [project.scripts]
