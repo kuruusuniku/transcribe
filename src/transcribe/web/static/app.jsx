@@ -1155,9 +1155,9 @@ function ToolsView({ notify, onStarted, enabledPost }) {
             })}
             <div className="card tool-item">
               <b>一時ファイルを削除</b>
-              <p>作業フォルダ（data/work）に残ったダウンロード済み音声などを削除して容量を空けます。処理中は実行しないでください。</p>
+              <p>作業フォルダ（data/work）のダウンロード済み音声と、処理が完了したジョブのアップロードファイル（data/uploads）を削除して容量を空けます。処理中は実行されません。</p>
               <div className="btns">
-                <button onClick={() => setConfirm({ confirm: '作業フォルダの一時ファイルを削除します。失敗したジョブを再開すると、音声を再ダウンロードします。', action: () => run('/api/clean', {}, '一時ファイルを削除します') })}>削除する</button>
+                <button onClick={() => setConfirm({ confirm: '一時ファイルを削除します。完了したジョブの「最初からやり直す」は、YouTube は再ダウンロード、アップロードした録音ファイルは再アップロードが必要になります。', action: () => run('/api/clean', {}, '一時ファイルを削除します') })}>削除する</button>
               </div>
             </div>
           </div>

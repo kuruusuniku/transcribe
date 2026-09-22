@@ -27,7 +27,7 @@ from transcribe.config import (
     TranscriptionConfig,
     YoutubeConfig,
 )
-from transcribe.pipeline import _copy_local_file, is_local_source, run_pipeline
+from transcribe.pipeline import _resolve_local_file, is_local_source, run_pipeline
 from transcribe.state import (
     get_job_by_id,
     get_job_by_url_or_id,
@@ -167,23 +167,19 @@ class TestValidateLocalPath:
         assert SUPPORTED_AUDIO_EXTENSIONS == {".mp3", ".m4a"}
 
 
-# ─── _copy_local_file() テスト ────────────────────────────────────────────
+# ─── _resolve_local_file() テスト ─────────────────────────────────────────
 
 
-class TestCopyLocalFile:
-    def test_copies_file_to_work_dir(self, mp3_file, tmp_path):
-        work_dir = tmp_path / "work"
-        work_dir.mkdir()
-        result = _copy_local_file(str(mp3_file), work_dir)
-        assert result.exists()
-        assert result.parent == work_dir
-        assert result.name == mp3_file.name
+class TestResolveLocalFile:
+    def test_returns_source_without_copy(self, mp3_file, tmp_path):
+        result = _resolve_local_file(str(mp3_file))
+        assert result == mp3_file
+        # 作業フォルダへのコピーは行わない
+        assert not (tmp_path / "work").exists() or not any((tmp_path / "work").iterdir())
 
     def test_nonexistent_source_raises(self, tmp_path):
-        work_dir = tmp_path / "work"
-        work_dir.mkdir()
         with pytest.raises(FileNotFoundError):
-            _copy_local_file(str(tmp_path / "nonexistent.mp3"), work_dir)
+            _resolve_local_file(str(tmp_path / "nonexistent.mp3"))
 
 
 # ─── CLI file サブコマンド テスト ──────────────────────────────────────────
@@ -474,7 +470,7 @@ class TestPermissionErrorNonRetryable:
         upsert_job(db, abs_path, source_type="local")
 
         with (
-            patch("transcribe.pipeline._copy_local_file", side_effect=PermissionError("Access denied")),
+            patch("transcribe.pipeline._resolve_local_file", side_effect=PermissionError("Access denied")),
             patch("transcribe.pipeline.time.sleep") as mock_sleep,
         ):
             run_pipeline([abs_path], cfg, GlossaryConfig())

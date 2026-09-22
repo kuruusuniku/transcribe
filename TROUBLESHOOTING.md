@@ -102,8 +102,8 @@ URL は `https://www.youtube.com/watch?v=ID` の形にそろえて登録され�
 
 ## ディスクがいっぱい
 
-ダウンロードした音声は再開用に `data/work/` に残ります。Web UI の「ツール → 一時ファイルを削除」（CLI: `uv run transcribe clean`）で削除できます。
-Web UI からアップロードしたファイルは `data/uploads/` に残るので、不要になったら手動で削除してください。
+ダウンロードした音声は再開用に `data/work/` に、Web UI からアップロードした録音ファイルは `data/uploads/` に残ります。
+Web UI の「ツール → 一時ファイルを削除」（CLI: `uv run transcribe clean`）で、作業フォルダと処理が完了したジョブのアップロードファイルを削除できます（処理中は実行されません）。
 
 ---
 

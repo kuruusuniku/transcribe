@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -697,16 +698,22 @@ def web(
             "または環境変数 TRANSCRIBE_WEB_TOKEN を設定してください（--insecure で強制起動）。[/red]".format(actual_host)
         )
         raise typer.Exit(1)
-    web_app.state.auth_token = token or None
-
-    # ワーカースレッドで実行するコマンドの出力をタスクログに流す
-    from .web import output_router
-    output_router.install()
+    # サーバー側の設定は環境変数で渡し、lifespan で適用する（--reload の子プロセスにも引き継ぐため）
+    os.environ["TRANSCRIBE_WEB_SERVER"] = "1"
+    if token:
+        os.environ["TRANSCRIBE_WEB_TOKEN"] = token
     if token:
         console.print("[cyan]トークン認証が有効です。初回は /?token=<token> でアクセスしてください。[/cyan]")
 
     console.print(f"[green]transcribe Web UI を起動します: http://{actual_host}:{actual_port}[/green]")
-    uvicorn.run(web_app, host=actual_host, port=actual_port, reload=reload)
+    if reload:
+        # リロードはアプリをインポート文字列で渡す必要がある
+        uvicorn.run(
+            "transcribe.web.app:app", host=actual_host, port=actual_port,
+            reload=True, reload_dirs=[str(Path(__file__).parent)],
+        )
+    else:
+        uvicorn.run(web_app, host=actual_host, port=actual_port)
 
 
 @app.command()
@@ -744,20 +751,43 @@ def delete(
 
 @app.command()
 def clean() -> None:
-    """data/work の一時ファイルを削除する"""
+    """作業フォルダの一時ファイルと、完了済みジョブのアップロードファイルを削除する"""
+    from filelock import Timeout
+
+    from .pipeline import pipeline_lock
+
     cfg, _ = _load_cfg_and_glossary()
-    work_dir = cfg.work_dir
+    lock = pipeline_lock(cfg.state_db)
+    try:
+        lock.acquire(timeout=0)
+    except Timeout:
+        console.print("[red]文字起こしの処理中は削除できません。処理が終わってから実行してください。[/red]")
+        raise typer.Exit(1)
 
-    files = list(work_dir.glob("*"))
-    if not files:
+    try:
+        deleted = 0
+        for f in cfg.work_dir.glob("*"):
+            if f.is_file():
+                f.unlink()
+                console.print(f"削除: {f.name}")
+                deleted += 1
+
+        # Web UI からのアップロードは retry / rerun に使うため、未完了のジョブが参照しているものは残す
+        uploads_dir = cfg.work_dir.parent / "uploads"
+        in_use = {
+            str(Path(j["url"]).resolve().parent)
+            for j in get_all_jobs(cfg.state_db)
+            if j["status"] != "done" and get_source_type(j) == "local"
+        }
+        for d in uploads_dir.glob("*") if uploads_dir.exists() else []:
+            if d.is_dir() and str(d.resolve()) not in in_use:
+                shutil.rmtree(d)
+                console.print(f"削除: uploads/{d.name}")
+                deleted += 1
+    finally:
+        lock.release()
+
+    if deleted == 0:
         console.print("[yellow]削除対象ファイルなし[/yellow]")
-        return
-
-    deleted = 0
-    for f in files:
-        if f.is_file():
-            f.unlink()
-            console.print(f"削除: {f.name}")
-            deleted += 1
-
-    console.print(f"[green]{deleted} ファイルを削除しました[/green]")
+    else:
+        console.print(f"[green]{deleted} 件を削除しました[/green]")

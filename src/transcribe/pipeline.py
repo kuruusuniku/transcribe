@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import shutil
 import time
 import traceback
 from dataclasses import asdict
@@ -86,17 +85,17 @@ def _local_video_id(src_path: Path) -> str:
     return f"{src_path.stem}_{h.hexdigest()[:8]}"
 
 
-def _copy_local_file(source_path: str, work_dir: Path) -> Path:
-    # アップロード済みファイルが既に work_dir 内にある場合はコピー不要
-    if Path(source_path).resolve().parent == work_dir.resolve():
-        return Path(source_path)
+def _resolve_local_file(source_path: str) -> Path:
+    """録音ファイルの存在を確認して返す。読むだけなので work_dir へのコピーはしない。"""
     src = Path(source_path)
     if not src.exists():
         raise FileNotFoundError(f"ソースファイルが見つかりません: {source_path}")
-    dest = work_dir / src.name
-    shutil.copy2(src, dest)
-    logger.info(f"ローカルファイルをコピー: {src.name} → {dest}")
-    return dest
+    return src
+
+
+def pipeline_lock(db: Path) -> FileLock:
+    """パイプライン（と作業フォルダの掃除）を直列化するプロセス間ロック。"""
+    return FileLock(str(db) + ".lock")
 
 
 # Whisper モデルのプロセス内キャッシュ。
@@ -153,7 +152,7 @@ def run_pipeline(
         source_type = "local" if is_local_source(url) else "youtube"
         upsert_job(db, url, source_type=source_type)
 
-    lock = FileLock(str(db) + ".lock")
+    lock = pipeline_lock(db)
     try:
         lock.acquire(timeout=0)
     except Timeout:
@@ -289,9 +288,9 @@ def _run_job(
     update_status(db, job_id, "downloading")
     with track_stage(db, job_id, "download"):
         if source_type == "local":
-            # ローカルファイル: ダウンロードスキップ、work_dir にコピー
+            # 録音ファイル: ダウンロード不要。元のファイルをそのまま読む
             title = Path(url).name
-            audio_path = _copy_local_file(url, work_dir)
+            audio_path = _resolve_local_file(url)
             video_id = _local_video_id(audio_path)
             upload_date = None
         else:

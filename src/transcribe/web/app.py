@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .routes import commands, files, jobs
 from .routes.glossary import router as glossary_router
 from .security import AccessControlMiddleware
+from . import output_router
 from .worker import worker
 from .ws import log_stream
 
@@ -20,6 +22,11 @@ STATIC_DIR = _WEB_DIR / "static"
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    if os.environ.get("TRANSCRIBE_WEB_SERVER") == "1":
+        # `transcribe web` から起動された場合のみ（テストでは適用しない）
+        # ワーカースレッドで実行するコマンドの出力をタスクログに流す
+        output_router.install()
+        _app.state.auth_token = os.environ.get("TRANSCRIBE_WEB_TOKEN") or None
     worker.ensure_started()
     yield
 
