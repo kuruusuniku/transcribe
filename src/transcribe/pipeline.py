@@ -30,7 +30,7 @@ from .state import (
 )
 from .summarize import generate_summary
 from .sync import sync_job
-from .utils import ensure_dir
+from .utils import ensure_dir, normalize_youtube_url
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,7 @@ def run_pipeline(
     work_dir = ensure_dir(cfg.work_dir)
     output_dir = ensure_dir(cfg.output_dir)
 
+    urls = [u if is_local_source(u) else normalize_youtube_url(u) for u in urls]
     for url in urls:
         source_type = "local" if is_local_source(url) else "youtube"
         upsert_job(db, url, source_type=source_type)

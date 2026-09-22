@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
+from .utils import normalize_youtube_url
+
 logger = logging.getLogger(__name__)
 
 SCHEMA = """
@@ -118,6 +120,10 @@ def get_job_by_url_or_id(db_path: Path, url_or_id: str) -> sqlite3.Row | None:
     """URL完全一致を優先し、次に video_id で検索する。"""
     with _connect(db_path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url_or_id,)).fetchone()
+        if row is None:
+            normalized = normalize_youtube_url(url_or_id)
+            if normalized != url_or_id:
+                row = conn.execute("SELECT * FROM jobs WHERE url = ?", (normalized,)).fetchone()
         if row is None:
             row = conn.execute(
                 "SELECT * FROM jobs WHERE video_id = ?", (url_or_id,)

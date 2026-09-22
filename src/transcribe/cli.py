@@ -35,7 +35,7 @@ from .state import (
 from .notion_sync import sync_to_notion
 from .summarize import generate_summary
 from .sync import sync_job
-from .utils import ensure_dir
+from .utils import ensure_dir, normalize_youtube_url
 
 app = typer.Typer(name="transcribe", add_completion=False, help="YouTube動画・ローカル音声ファイル 自動文字起こしツール")
 console = Console()
@@ -97,7 +97,7 @@ def run(
     entries: list[str] = []
     for entry in raw_entries:
         if entry.startswith(("http://", "https://")):
-            entries.append(entry)
+            entries.append(normalize_youtube_url(entry))
         else:
             try:
                 entries.append(_validate_local_path(entry))
