@@ -690,18 +690,23 @@ def test_sync_local_to_lecture_db_uses_schema(mock_client_cls, mock_query_db, tm
     cfg = NotionConfig(enabled=True, token="t", database_id="video-db", local_database_id="lecture-db")
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.databases.retrieve.return_value = {
+    mock_client.pages.create.return_value = {"id": "p1"}
+
+    schema_resp = MagicMock(status_code=200)
+    schema_resp.json.return_value = {
         "properties": {"名前": {"type": "title"}, "日付": {"type": "date"}, "音声時間": {"type": "number"},
                        "タグ": {"type": "multi_select"}, "まとめ進捗": {"type": "checkbox"}},
     }
-    mock_client.pages.create.return_value = {"id": "p1"}
 
     d = tmp_path / "out"
     d.mkdir()
     (d / "summary.md").write_text("# まとめ\n\n### 主要キーワード\n* 中道\n", encoding="utf-8")
     (d / "meta.json").write_text(json.dumps({"title": "250430 講義.mp3", "recording_date": "不明", "duration_minutes": 55}), encoding="utf-8")
 
-    assert sync_to_notion(d, "C:/audio/250430 講義.mp3", cfg, "local") is True
+    with patch("transcribe.notion_sync.httpx.get", return_value=schema_resp) as mock_get:
+        assert sync_to_notion(d, "C:/audio/250430 講義.mp3", cfg, "local") is True
+    # プロパティ構成はバージョンを固定した HTTP リクエストで取得する
+    assert mock_get.call_args.kwargs["headers"]["Notion-Version"] == "2022-06-28"
     kwargs = mock_client.pages.create.call_args.kwargs
     assert kwargs["parent"] == {"database_id": "lecture-db"}
     props = kwargs["properties"]

@@ -254,13 +254,22 @@ _DURATION_PROPERTIES = ("動画時間", "音声時間")
 _schema_cache: dict[str, dict[str, str]] = {}
 
 
-def _get_db_schema(client, database_id: str) -> dict[str, str] | None:
-    """DB のプロパティ名 → 型 を返す。取得できない場合は None（そのまま送信する）。"""
+def _get_db_schema(token: str, database_id: str) -> dict[str, str] | None:
+    """DB のプロパティ名 → 型 を返す。取得できない場合は None（そのまま送信する）。
+
+    notion-client の databases.retrieve は新しい API バージョンでプロパティを返さないため、
+    バージョンを固定した HTTP リクエストで取得する。
+    """
     if database_id in _schema_cache:
         return _schema_cache[database_id]
     try:
-        db = client.databases.retrieve(database_id=database_id)
-        props = db.get("properties") if isinstance(db, dict) else None
+        resp = httpx.get(
+            f"https://api.notion.com/v1/databases/{database_id}",
+            headers={"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        props = resp.json().get("properties")
         if not isinstance(props, dict):
             return None
         schema = {name: p.get("type", "") for name, p in props.items()}
@@ -438,7 +447,7 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_t
     client = Client(auth=cfg.token)
     tags = _extract_tags_from_summary(summary_text)
     props = _build_properties(title, date_str, video_url, duration_min, source_type, tags)
-    props = _fit_properties_to_schema(props, _get_db_schema(client, target_db_id))
+    props = _fit_properties_to_schema(props, _get_db_schema(cfg.token, target_db_id))
     blocks = md_to_blocks(summary_text)
 
     existing_page_id: str | None = None
