@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import subprocess
 import zipfile
 from pathlib import Path
@@ -32,12 +33,17 @@ async def run_file(audio: UploadFile = File(...), cfg: AppConfig = Depends(get_c
             detail=f"Unsupported file type. Allowed: {allowed}",
         )
 
-    tmp_path = cfg.work_dir / f"{uuid4().hex}{ext}"
-    content = await audio.read()
-    tmp_path.write_bytes(content)
+    # 元ファイル名をタイトル・出力名に使い、retry/rerun できるようアップロード先は削除しない。
+    # 同名ファイルの衝突を避けるため UUID のサブディレクトリに保存する。
+    safe_name = Path(audio.filename or f"upload{ext}").name
+    upload_dir = cfg.work_dir.parent / "uploads" / uuid4().hex
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / safe_name
+    with dest.open("wb") as f:
+        shutil.copyfileobj(audio.file, f)
 
-    cmd = transcribe_cmd("file", str(tmp_path))
-    task_id = start_task(cmd, cleanup=tmp_path)
+    cmd = transcribe_cmd("file", str(dest))
+    task_id = start_task(cmd)
     return {"task_id": task_id}
 
 
