@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generator
+from typing import Callable, Generator
 
 from ..config import AppConfig, GlossaryConfig
 
@@ -24,10 +24,12 @@ def transcribe(
     cfg: AppConfig,
     glossary: GlossaryConfig,
     model_cache: dict,
+    on_progress: Callable[[float], None] | None = None,
 ) -> Generator[Segment, None, None]:
     """
     音声ファイルを文字起こしし、Segment をジェネレータで yield する。
     model_cache に {"model": WhisperModel} を持たせることで複数ジョブ間でモデルを再利用する。
+    on_progress には処理済みの割合（0.0〜1.0）が逐次渡される。
     """
     from faster_whisper import WhisperModel  # noqa: PLC0415
 
@@ -74,7 +76,10 @@ def transcribe(
         f"推定音声時間: {info.duration:.1f}s"
     )
 
+    duration = info.duration or 0.0
     for seg in segments_iter:
+        if on_progress is not None and duration > 0:
+            on_progress(min(seg.end / duration, 1.0))
         yield Segment(
             start=seg.start,
             end=seg.end,

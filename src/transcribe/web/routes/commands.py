@@ -118,6 +118,42 @@ async def sync_notion_jobs(body: SyncNotionBody):
     return {"task_id": task_id}
 
 
+class ResumePostBody(BaseModel):
+    job_id: int
+
+
+@router.post("/resume-post")
+async def resume_post(body: ResumePostBody):
+    task_id = start_task(transcribe_cmd("resume-post", str(body.job_id)))
+    return {"task_id": task_id}
+
+
+@router.get("/queue")
+async def queue_status():
+    from ..worker import worker
+
+    current = worker.current
+    return {
+        "running": " ".join(current.args) if current is not None else None,
+        "pending": worker.pending_count(),
+    }
+
+
+@router.get("/health")
+async def health(cfg: ConfigDep):
+    from ...health import collect_checks
+    from ..glossary_path import GLOSSARY_PATH
+
+    return [c.to_dict() for c in collect_checks(cfg, GLOSSARY_PATH)]
+
+
+@router.post("/health/test/{key}")
+async def health_test(key: str, cfg: ConfigDep):
+    from ...health import run_connection_test
+
+    return (await asyncio.to_thread(run_connection_test, cfg, key)).to_dict()
+
+
 @router.post("/clean")
 async def clean_work():
     cmd = transcribe_cmd("clean")

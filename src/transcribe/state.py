@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS job_stages (
     error           TEXT,
     started_at      TIMESTAMP,
     finished_at     TIMESTAMP,
+    progress        REAL,
     PRIMARY KEY (job_id, stage)
 );
 """
@@ -87,6 +88,12 @@ def _migrate_notion_synced_at(conn: sqlite3.Connection) -> None:
         logger.info("マイグレーション: notion_synced_at カラムを追加しました")
 
 
+def _migrate_stage_progress(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(job_stages)").fetchall()}
+    if "progress" not in cols:
+        conn.execute("ALTER TABLE job_stages ADD COLUMN progress REAL")
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
@@ -97,6 +104,7 @@ def init_db(db_path: Path) -> None:
         _migrate_synced_at(conn)
         _migrate_summarized_at(conn)
         _migrate_notion_synced_at(conn)
+        _migrate_stage_progress(conn)
     logger.debug(f"SQLite 初期化完了: {db_path}")
 
 
@@ -311,6 +319,7 @@ def start_stage(db_path: Path, job_id: int, stage: str) -> None:
                    status = 'running',
                    attempts = attempts + 1,
                    error = NULL,
+                   progress = NULL,
                    started_at = CURRENT_TIMESTAMP,
                    finished_at = NULL""",
             (job_id, stage),
@@ -356,6 +365,29 @@ def run_stage(db_path: Path, job_id: int, stage: str, fn):
         finish_stage(db_path, job_id, stage, "failed", error=f"{type(e).__name__}: {e}")
         raise
     finish_stage(db_path, job_id, stage, "done" if result else "skipped")
+    return result
+
+
+def update_stage_progress(db_path: Path, job_id: int, stage: str, progress: float) -> None:
+    """実行中ステージの進捗（0.0〜1.0）を記録する。"""
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE job_stages SET progress = ? WHERE job_id = ? AND stage = ?",
+            (progress, job_id, stage),
+        )
+
+
+def get_all_stage_summaries(db_path: Path) -> dict[int, dict[str, dict]]:
+    """全ジョブのステージ状態を {job_id: {stage: {status, progress, error}}} で返す（一覧表示用）。"""
+    with _connect(db_path) as conn:
+        rows = conn.execute("SELECT job_id, stage, status, progress, error FROM job_stages").fetchall()
+    result: dict[int, dict[str, dict]] = {}
+    for r in rows:
+        result.setdefault(r["job_id"], {})[r["stage"]] = {
+            "status": r["status"],
+            "progress": r["progress"],
+            "error": r["error"],
+        }
     return result
 
 

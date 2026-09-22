@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -7,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ...config import AppConfig
-from ...state import get_all_jobs, get_job_by_id, get_job_stages
+from ...pipeline import enabled_post_stages
+from ...state import POST_STAGES, get_all_jobs, get_all_stage_summaries, get_job_by_id, get_job_stages
 from ..deps import get_config
 
 router = APIRouter()
@@ -15,10 +17,57 @@ router = APIRouter()
 ConfigDep = Annotated[AppConfig, Depends(get_config)]
 
 
+_IN_PROGRESS = ("downloading", "separating", "transcribing", "formatting")
+
+
+def _read_meta(output_dir: str | None) -> dict:
+    if not output_dir:
+        return {}
+    path = Path(output_dir) / "meta.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _attention(job: dict, stages: dict, enabled_post: list[str]) -> list[str]:
+    """ユーザーの対応が必要な理由（一覧の「要対応」判定に使う）。"""
+    reasons: list[str] = []
+    if job["status"] == "failed":
+        reasons.append("処理に失敗しました")
+        return reasons
+    if job["status"] != "done":
+        return reasons
+    for stage in POST_STAGES:
+        if stages.get(stage, {}).get("status") == "failed":
+            reasons.append(f"{STAGE_NAMES[stage]}に失敗しました")
+    if "summarize" in enabled_post and not job.get("summarized_at") and "summarize" not in stages:
+        reasons.append("まとめがありません")
+    # 低信頼セグメント（要確認箇所）は必須の対応ではないため attention には含めず、一覧で件数だけ表示する
+    return reasons
+
+
+STAGE_NAMES = {"summarize": "まとめ生成", "docs_sync": "Google Docs 同期", "notion_sync": "Notion 同期"}
+
+
 @router.get("/jobs")
 async def list_jobs(cfg: ConfigDep):
     rows = get_all_jobs(cfg.state_db)
-    return [dict(r) for r in rows]
+    summaries = get_all_stage_summaries(cfg.state_db)
+    enabled_post = enabled_post_stages(cfg)
+    result = []
+    for r in rows:
+        job = dict(r)
+        meta = _read_meta(job["output_dir"])
+        stages = summaries.get(job["id"], {})
+        job["stages"] = stages
+        job["recording_date"] = meta.get("recording_date")
+        job["low_confidence_count"] = meta.get("low_confidence_count", 0)
+        job["in_progress"] = job["status"] in _IN_PROGRESS or job["status"] == "queued"
+        job["progress"] = stages.get("transcribe", {}).get("progress") if job["status"] == "transcribing" else None
+        job["attention"] = _attention(job, stages, enabled_post)
+        result.append(job)
+    return result
 
 
 @router.get("/jobs/{job_id}")
@@ -27,6 +76,17 @@ async def get_job(job_id: int, cfg: ConfigDep):
     if row is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return dict(row)
+
+
+@router.get("/jobs/{job_id}/segments")
+async def get_segments(job_id: int, cfg: ConfigDep):
+    row = get_job_by_id(cfg.state_db, job_id)
+    if row is None or not row["output_dir"]:
+        raise HTTPException(status_code=404, detail="Job not found")
+    path = Path(row["output_dir"]) / "segments.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="segments.json not found")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @router.get("/jobs/{job_id}/stages")

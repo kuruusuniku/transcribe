@@ -351,3 +351,55 @@ def test_glossary_put_invalid_regex_rejected(client):
         "important_terms": [],
     })
     assert res.status_code == 422
+
+
+# ─── UI 用 API ────────────────────────────────────────────────────────────
+
+
+def test_jobs_include_stages_and_attention(client, mock_config, tmp_db):
+    from transcribe.state import finish_stage
+
+    job_id = upsert_job(tmp_db, "https://www.youtube.com/watch?v=attention01")
+    update_status(tmp_db, job_id, "done", output_dir=str(mock_config.output_dir))
+    finish_stage(tmp_db, job_id, "notion_sync", "failed", error="401")
+
+    job = next(j for j in client.get("/api/jobs").json() if j["id"] == job_id)
+    assert job["stages"]["notion_sync"]["status"] == "failed"
+    assert job["attention"] == ["Notion 同期に失敗しました"]
+    assert job["in_progress"] is False
+
+
+def test_queue_status(client):
+    res = client.get("/api/queue")
+    assert res.status_code == 200
+    assert set(res.json()) == {"running", "pending"}
+
+
+def test_health_lists_checks(client):
+    keys = {c["key"] for c in client.get("/api/health").json()}
+    assert {"ffmpeg", "summarize", "notion", "docs"} <= keys
+
+
+def test_resume_post_starts_task(client):
+    with patch("transcribe.web.routes.commands.start_task", return_value="t-post") as mock_st:
+        res = client.post("/api/resume-post", json={"job_id": 3})
+    assert res.json()["task_id"] == "t-post"
+    assert mock_st.call_args.args[0] == ["resume-post", "3"]
+
+
+def test_add_substitution_applies_to_transcript(client, mock_config, tmp_db, tmp_path):
+    glossary = tmp_path / "glossary.yaml"
+    glossary.write_text("context: ''\nsubstitutions: []\nimportant_terms: []\n", encoding="utf-8")
+    out = mock_config.output_dir / "job1"
+    out.mkdir()
+    (out / "transcript.md").write_text("最下丹田と最下丹田", encoding="utf-8")
+    job_id = upsert_job(tmp_db, "https://www.youtube.com/watch?v=glossary001")
+    update_status(tmp_db, job_id, "done", output_dir=str(out))
+
+    with patch("transcribe.web.routes.glossary.GLOSSARY_PATH", glossary):
+        res = client.post("/api/glossary/substitutions", json={
+            "pattern": "最下丹田", "replacement": "臍下丹田", "apply_to_job_id": job_id,
+        })
+    assert res.json() == {"ok": True, "replaced": 2}
+    assert (out / "transcript.md").read_text(encoding="utf-8") == "臍下丹田と臍下丹田"
+    assert "臍下丹田" in glossary.read_text(encoding="utf-8")

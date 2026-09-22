@@ -53,6 +53,10 @@ class TaskWorker:
             self._thread = threading.Thread(target=self._loop, name="transcribe-worker", daemon=True)
             self._thread.start()
 
+    def pending_count(self) -> int:
+        with self._lock:
+            return self._pending
+
     def submit(self, task: Task) -> int:
         """タスクを投入し、先に待っているタスク数を返す。"""
         self.ensure_started()

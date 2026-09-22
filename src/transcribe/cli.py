@@ -14,7 +14,7 @@ from rich.table import Table
 
 from . import setup_logging
 from .config import load_config, load_glossary
-from .pipeline import run_pipeline
+from .pipeline import pending_post_stages, run_pipeline, run_post_stages
 from .state import (
     delete_job,
     get_all_done_jobs,
@@ -616,6 +616,62 @@ def sync_notion(
             fail_count += 1
 
     console.print(f"\n成功: {success_count}  スキップ: {skip_count}  失敗: {fail_count}")
+
+
+@app.command()
+def doctor(
+    test: bool = typer.Option(False, "--test", help="Notion / LLM に実際に接続して確認する"),
+) -> None:
+    """設定と外部連携の状態を診断する"""
+    from .health import collect_checks, run_connection_test
+
+    cfg, _ = _load_cfg_and_glossary()
+    checks = collect_checks(cfg, _GLOSSARY_PATH)
+    if test:
+        checks = [run_connection_test(cfg, c.key) if c.testable else c for c in checks]
+
+    icons = {"ok": "[green]✓[/green]", "warn": "[yellow]![/yellow]", "error": "[red]✗[/red]", "off": "[dim]-[/dim]"}
+    table = Table(title="設定診断", show_lines=False)
+    table.add_column("")
+    table.add_column("項目")
+    table.add_column("状態")
+    table.add_column("対処", no_wrap=False)
+    for c in checks:
+        table.add_row(icons.get(c.status, c.status), c.label, c.detail, c.hint)
+    console.print(table)
+    if any(c.status == "error" for c in checks):
+        raise typer.Exit(1)
+
+
+@app.command("resume-post")
+def resume_post(
+    job_id: int = typer.Argument(..., help="対象ジョブID"),
+) -> None:
+    """失敗・未実行の後処理（まとめ / Docs / Notion）だけをやり直す"""
+    cfg, glossary = _load_cfg_and_glossary()
+    job = get_job_by_id(cfg.state_db, job_id)
+    if job is None:
+        console.print(f"[red]ジョブ {job_id} が見つかりません[/red]")
+        raise typer.Exit(1)
+    if job["status"] != "done" or not job["output_dir"]:
+        console.print(f"[yellow]ジョブ {job_id} は文字起こしが完了していません: {job['status']}[/yellow]")
+        raise typer.Exit(1)
+
+    targets = pending_post_stages(cfg.state_db, job_id, cfg)
+    if not targets:
+        console.print("[green]やり直しが必要な後処理はありません[/green]")
+        return
+
+    console.print(f"[green]後処理をやり直します: {', '.join(STAGE_LABELS[s] for s in sorted(targets))}[/green]")
+    results = run_post_stages(
+        job_id, job["url"], job["title"] or "", get_source_type(job), Path(job["output_dir"]),
+        cfg.state_db, cfg, glossary, only=targets,
+    )
+    for stage, ok in results.items():
+        mark = "[green]✓[/green]" if ok else "[red]✗[/red]"
+        console.print(f"  {mark} {STAGE_LABELS[stage]}")
+    if not all(results.values()):
+        raise typer.Exit(1)
 
 
 @app.command()

@@ -28,8 +28,10 @@ from .state import (
     record_synced,
     finish_stage,
     reset_for_retry,
+    get_job_stages,
     run_stage,
     track_stage,
+    update_stage_progress,
     update_status,
     upsert_job,
 )
@@ -317,7 +319,10 @@ def _run_job(
         try:
             update_status(db, job_id, "transcribing")
             with track_stage(db, job_id, "transcribe"):
-                raw_segments = list(transcribe(separated_path, cfg, glossary, model_cache))
+                raw_segments = list(transcribe(
+                    separated_path, cfg, glossary, model_cache,
+                    on_progress=_progress_recorder(db, job_id, "transcribe"),
+                ))
                 _save_transcription_cache(cache_path, signature, raw_segments)
         finally:
             # 分離済み音声は文字起こし後は不要。失敗時も残さない（元音声はリトライ用に保持）
@@ -347,41 +352,95 @@ def _run_job(
     logger.info(f"[job {job_id}] 完了: {job_output_dir}")
 
     # 5. 後処理（best-effort: 失敗してもジョブは done のまま。結果は job_stages に記録）
+    run_post_stages(
+        job_id, url, title, source_type, job_output_dir, db, cfg, glossary,
+    )
+
+
+def enabled_post_stages(cfg: AppConfig) -> list[str]:
+    """設定で有効になっている後処理ステージ。"""
+    stages: list[str] = []
     if cfg.summarize.enabled and cfg.summarize.resolve_api_key():
-        def _summarize() -> bool:
-            summary_path = generate_summary(
-                output_dir=job_output_dir,
-                video_url=url,
-                video_title=title,
-                cfg=cfg.summarize,
-                glossary_entries=glossary.substitutions,
-                source_type=source_type,
-            )
-            if summary_path:
-                record_summarized(db, job_id)
-            return bool(summary_path)
-
-        run_post_stage(db, job_id, "summarize", _summarize)
-
+        stages.append("summarize")
     if cfg.google_docs.enabled and cfg.google_docs.root_folder_id:
-        def _docs_sync() -> bool:
-            doc_id = sync_job({"source_type": source_type}, job_output_dir, cfg.google_docs)
-            if doc_id:
-                record_synced(db, job_id)
-            return bool(doc_id)
-
-        run_post_stage(db, job_id, "docs_sync", _docs_sync)
-
+        stages.append("docs_sync")
     if cfg.notion.enabled and cfg.notion.database_id and cfg.notion.token:
-        def _notion_sync() -> bool:
-            from .notion_sync import sync_to_notion  # noqa: PLC0415
+        stages.append("notion_sync")
+    return stages
 
-            synced = sync_to_notion(job_output_dir, url, cfg.notion, source_type)
-            if synced:
-                record_notion_synced(db, job_id)
-            return bool(synced)
 
-        run_post_stage(db, job_id, "notion_sync", _notion_sync)
+def run_post_stages(
+    job_id: int,
+    url: str,
+    title: str,
+    source_type: str,
+    job_output_dir: Path,
+    db: Path,
+    cfg: AppConfig,
+    glossary: GlossaryConfig,
+    *,
+    only: set[str] | None = None,
+) -> dict[str, bool]:
+    """有効な後処理（まとめ → Docs → Notion）を順に実行し、ステージごとの成否を返す。
+
+    only を指定した場合はそのステージだけを実行する。
+    """
+    results: dict[str, bool] = {}
+    for stage in enabled_post_stages(cfg):
+        if only is not None and stage not in only:
+            continue
+        if stage == "summarize":
+            def fn() -> bool:
+                summary_path = generate_summary(
+                    output_dir=job_output_dir,
+                    video_url=url,
+                    video_title=title,
+                    cfg=cfg.summarize,
+                    glossary_entries=glossary.substitutions,
+                    source_type=source_type,
+                )
+                if summary_path:
+                    record_summarized(db, job_id)
+                return bool(summary_path)
+        elif stage == "docs_sync":
+            def fn() -> bool:
+                doc_id = sync_job({"source_type": source_type}, job_output_dir, cfg.google_docs)
+                if doc_id:
+                    record_synced(db, job_id)
+                return bool(doc_id)
+        else:
+            def fn() -> bool:
+                from .notion_sync import sync_to_notion  # noqa: PLC0415
+
+                synced = sync_to_notion(job_output_dir, url, cfg.notion, source_type)
+                if synced:
+                    record_notion_synced(db, job_id)
+                return bool(synced)
+
+        results[stage] = run_post_stage(db, job_id, stage, fn)
+    return results
+
+
+def pending_post_stages(db: Path, job_id: int, cfg: AppConfig) -> set[str]:
+    """有効な後処理のうち、まだ成功していない（失敗・未実行）ステージ。"""
+    done = {r["stage"] for r in get_job_stages(db, job_id) if r["status"] == "done"}
+    return {s for s in enabled_post_stages(cfg) if s not in done}
+
+
+def _progress_recorder(db: Path, job_id: int, stage: str):
+    """進捗を 2% 刻みで DB に記録するコールバックを返す（書き込み頻度を抑える）。"""
+    last = -1.0
+
+    def record(progress: float) -> None:
+        nonlocal last
+        if progress - last >= 0.02 or progress >= 1.0:
+            last = progress
+            try:
+                update_stage_progress(db, job_id, stage, round(progress, 3))
+            except Exception as e:  # 進捗記録の失敗で文字起こしを止めない
+                logger.debug(f"進捗記録失敗: {e}")
+
+    return record
 
 
 def run_post_stage(db: Path, job_id: int, stage: str, fn) -> bool:

@@ -156,3 +156,25 @@ def test_pipeline_retry_reuses_transcription_cache(cfg, db, tmp_path):
     assert st["transcribe"]["status"] == "skipped"
     assert st["format"]["status"] == "done"
     assert st["format"]["attempts"] == 2
+
+
+def test_pipeline_records_transcribe_progress(cfg, db, tmp_path):
+    url = "https://www.youtube.com/watch?v=VIDxxxxxxxx"
+    seen = []
+
+    def fake_transcribe(path, cfg_, glossary_, cache, on_progress=None):
+        for p in (0.1, 0.5, 1.0):
+            on_progress(p)
+            seen.append(p)
+        yield Segment(0, 1, "a", -0.1, 0.0)
+
+    with (
+        patch("transcribe.pipeline.download_audio", return_value=_dl_result(tmp_path)),
+        patch("transcribe.pipeline.separate_audio", side_effect=lambda p, *a: p),
+        patch("transcribe.pipeline.transcribe", side_effect=fake_transcribe),
+        patch("transcribe.pipeline.format_outputs", return_value=1),
+    ):
+        run_pipeline([url], cfg, GlossaryConfig())
+
+    job = get_job_by_url_or_id(db, url)
+    assert _stages(db, job["id"])["transcribe"]["progress"] == 1.0
