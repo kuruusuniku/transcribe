@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
 import time
@@ -66,6 +67,15 @@ def _output_dir_for(output_root: Path, upload_date: str | None, video_id: str) -
     else:
         date_str = str(date.today())
     return output_root / f"{date_str}_{video_id}"
+
+
+def _local_video_id(src_path: Path) -> str:
+    """ローカルファイルの識別子。同名の別ファイルで出力先が衝突しないよう内容ハッシュを付与する。"""
+    h = hashlib.sha1()
+    with src_path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return f"{src_path.stem}_{h.hexdigest()[:8]}"
 
 
 def _copy_local_file(source_path: str, work_dir: Path) -> Path:
@@ -204,9 +214,9 @@ def _run_job(
         # ローカルファイル: ダウンロードスキップ、work_dir にコピー
         update_status(db, job_id, "downloading")
         src_path = Path(url)
-        video_id = src_path.stem
         title = src_path.name
         audio_path = _copy_local_file(url, work_dir)
+        video_id = _local_video_id(audio_path)
         upload_date = None
         update_status(db, job_id, "downloading", video_id=video_id, title=title)
     else:
