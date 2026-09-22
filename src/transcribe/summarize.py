@@ -255,7 +255,9 @@ def call_claude(
             model=cfg.anthropic_model,
             max_tokens=cfg.max_output_tokens,
             temperature=cfg.temperature,
-            system=system_prompt,
+            # システムプロンプト（指示 + 用語集）は全ジョブ共通のため、一括まとめ時にキャッシュを効かせる。
+            # モデルごとの最小キャッシュ長に満たない場合は API 側で単に無視される。
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_message}],
         )
         if not message.content:
