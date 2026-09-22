@@ -2,7 +2,12 @@
 
 ## 概要
 
-YouTube 限定公開動画・ローカル音声ファイルを入れておくと、**文字起こし → LLM による構造化まとめ → Notion / Google Docs への登録**まで自動で行うツール。
+体育指導の YouTube 限定公開動画・叡智講義の録音ファイルを入れておくと、**文字起こし → LLM による構造化まとめ → Notion / Google Docs への登録**まで自動で行うツール。
+
+| 素材 | 扱い | まとめの形式 | Notion の登録先 |
+|---|---|---|---|
+| YouTube URL | 体育指導の動画 | 体育指導用（メソッド・身体部位・チャプター表） | 体育動画まとめDB（`notion.database_id`） |
+| 録音ファイル（mp3 / m4a） | 叡智講義 | 講義用（要旨・概念・叡智の伝統・印象的な言葉・章立て） | 叡智まとめDB（`notion.local_database_id`） |
 
 使う人がやることは「① 入れる → ② 待つ → ③ 要対応だけ確認する」の 3 つだけ。
 
@@ -50,7 +55,7 @@ YouTube 限定公開動画・ローカル音声ファイルを入れておくと
 | コマンド | 説明 |
 |---|---|
 | `transcribe run` | `urls.txt` から一括処理（文字起こし → まとめ → Docs 同期） |
-| `transcribe file <path>` | ローカル音声ファイル（mp3/m4a）を文字起こし |
+| `transcribe file <path>` | 叡智講義などの録音ファイル（mp3/m4a）を文字起こし |
 | `transcribe convert <path>` | m4a → mp3 変換（`--force` で上書き） |
 | `transcribe summarize [--all \| --id N]` | LLM まとめ生成 |
 | `transcribe sync [--all]` | Google Docs 同期 |
@@ -78,7 +83,7 @@ YouTube 限定公開動画・ローカル音声ファイルを入れておくと
 - **Web UI**: 「＋ 追加」から URL / ファイルを入れる → 翌朝「要対応」を確認 → 誤認識は文字起こし画面から用語辞書に登録
 - **夜間バッチ（CLI）**: `urls.txt` に URL を追加 → `uv run transcribe run`（寝る前）→ 翌朝 Notion / Google Docs と完了メールを確認
 
-### ローカル音声ファイル
+### 叡智講義（録音ファイル）
 
 - mp3: `uv run transcribe file path/to/audio.mp3`
 - m4a: `uv run transcribe file path/to/audio.m4a`

@@ -112,7 +112,9 @@ def collect_checks(cfg: AppConfig, glossary_path: Path | None = None) -> list[Ch
         checks.append(Check("notion", "Notion 同期", "error", "token または database_id が未設定",
                             "config.yaml の notion.token と notion.database_id を設定してください"))
     else:
-        detail = "動画 DB 設定済み" + ("・ローカル音声 DB 設定済み" if n.local_database_id else "")
+        detail = "体育動画 DB 設定済み" + (
+            "・叡智講義 DB 設定済み" if n.local_database_id else "（叡智講義も体育動画 DB に登録）"
+        )
         checks.append(Check("notion", "Notion 同期", "ok", detail, testable=True))
 
     # ── メール通知
@@ -147,7 +149,7 @@ def run_connection_test(cfg: AppConfig, key: str) -> Check:
             n = cfg.notion
             results = []
             failed = False
-            for label, db_id in (("動画 DB", n.database_id), ("ローカル音声 DB", n.local_database_id)):
+            for label, db_id in (("体育動画 DB", n.database_id), ("叡智講義 DB", n.local_database_id)):
                 if not db_id:
                     continue
                 resp = httpx.get(

@@ -106,7 +106,7 @@ notion:
   enabled: false
   token: ""             # Notion Internal Integration Secret
   database_id: ""       # 同期先 DB の ID（32 桁英数字）
-  local_database_id: ""  # ローカル音声用 Notion DB ID（空なら database_id を使用）
+  local_database_id: ""  # 叡智講義（録音ファイル）用 Notion DB ID（空なら database_id を使用）
 
 notification:
   enabled: false

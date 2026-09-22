@@ -55,7 +55,9 @@ uv run transcribe resume-post <id>
 1. `notion.token` が正しい Internal Integration Secret か
 2. `notion.database_id` が 32 桁英数字（データベース URL の末尾）か
 3. Notion データベースの「…」→「接続」でインテグレーションを接続しているか
-4. DB に必要なプロパティ（名前 / 日付 / URL / 動画時間 / ソース種別 / まとめ進捗 / タグ）がすべてあるか
+4. DB に「名前（タイトル）」プロパティがあるか。そのほかのプロパティ（日付 / タグ / まとめ進捗 / URL / ソース種別 / 動画時間・音声時間）は、DB にあるものだけ書き込まれます
+
+叡智講義（録音ファイル）は `notion.local_database_id` の DB（叡智まとめDB）に登録されます。この DB にもインテグレーションの接続が必要です。
 
 ### Google Docs 同期が失敗する / 初回認証
 

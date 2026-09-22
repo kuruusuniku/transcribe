@@ -76,6 +76,7 @@ def format_outputs(
         segment_count=len(seg_list),
         output_dir=output_dir,
         source_type=source_type,
+        duration_seconds=seg_list[-1].end if seg_list else 0.0,
     )
 
     logger.info(f"出力完了: {output_dir}")
@@ -221,6 +222,7 @@ def _write_meta_json(
     segment_count: int,
     output_dir: Path,
     source_type: str = "youtube",
+    duration_seconds: float = 0.0,
 ) -> None:
     data: dict = {
         "video_id": video_id,
@@ -231,6 +233,7 @@ def _write_meta_json(
         "transcribed_at": transcribed_at,
         "segment_count": segment_count,
         "low_confidence_count": low_conf_count,
+        "duration_minutes": round(duration_seconds / 60),
         "config_snapshot": {
             "model": cfg.transcription.model,
             "compute_type": cfg.transcription.compute_type,

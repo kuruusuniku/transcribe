@@ -36,6 +36,8 @@ const STAGE_LABELS = {
 
 const STAGE_STATUS_LABEL = { done: '完了', failed: '失敗', running: '実行中', skipped: 'スキップ' };
 
+const SOURCE_LABEL = { youtube: '体育動画', local: '叡智講義' };
+
 const POST_STAGE_KEYS = { summarize: 'summarize', docs_sync: 'docs', notion_sync: 'notion' };
 
 // ─── ユーティリティ ────────────────────────────────────────────────────────
@@ -155,7 +157,7 @@ function HelpModal({ onClose }) {
   return (
     <Modal onClose={onClose} wide>
       <h2>使い方</h2>
-      <p>YouTube の動画や録音ファイルを入れておくと、<b>文字起こし → まとめ作成 → Notion / Google Docs への登録</b>まで自動で進みます。やることは 3 つだけです。</p>
+      <p>体育指導の YouTube 動画や叡智講義の録音ファイルを入れておくと、<b>文字起こし → まとめ作成 → Notion / Google Docs への登録</b>まで自動で進みます。やることは 3 つだけです。</p>
       <div className="flow" style={{ margin: '14px 0' }}>
         <div className="flow-step"><span className="num">1</span><b>入れる</b><p>「＋ 追加」から URL を貼るか、音声ファイル（mp3 / m4a）をドロップして「追加して開始」。</p></div>
         <div className="flow-step"><span className="num">2</span><b>待つ</b><p>1 件ずつ順番に自動処理されます。進み具合は左の「処理中」で確認できます。</p></div>
@@ -163,6 +165,7 @@ function HelpModal({ onClose }) {
       </div>
       <h3 style={{ fontSize: 13, marginTop: 8 }}>ことば</h3>
       <dl>
+        <dt>体育動画 / 叡智講義</dt><dd>YouTube の URL は体育指導の動画、録音ファイル（mp3 / m4a）は叡智講義として扱います。まとめの形式と Notion の登録先（体育動画まとめDB / 叡智まとめDB）が分かれます。</dd>
         <dt>まとめ</dt><dd>文字起こしをもとに AI が作る構造化された要約。Notion / Docs に登録されるのはこれです。</dd>
         <dt>要対応</dt><dd>失敗した・まとめがないなど、あなたの操作が必要なジョブ。</dd>
         <dt>要確認箇所</dt><dd>聞き取りの自信が低い部分。文字起こし画面で黄色く表示されます。必要なら直してください。</dd>
@@ -225,6 +228,7 @@ function JobRow({ job, selected, onSelect, enabledPost }) {
       <div className="job-row-meta">
         <StatusLabel status={job.status} />
         <span>#{job.id}</span>
+        <span className={`kind-label kind-${job.source_type}`}>{SOURCE_LABEL[job.source_type] || job.source_type}</span>
         {job.recording_date && job.recording_date !== '不明' && <span>{job.recording_date}</span>}
         <ResultIcons job={job} enabledPost={enabledPost} />
         {job.low_confidence_count > 0 && (
@@ -342,11 +346,11 @@ function AddView({ health, onAdded, notify, isFirstUse, onOpenHelp }) {
     <div className="view">
       <div className="view-narrow">
         <h2>素材を追加</h2>
-        <p className="lead">YouTube の URL を貼るか、録音ファイルをドロップして「追加して開始」を押すだけです。あとは自動で進みます。</p>
+        <p className="lead">体育指導の YouTube URL を貼るか、叡智講義の録音ファイルをドロップして「追加して開始」を押すだけです。あとは自動で進みます。</p>
 
         <div className="card add-card section">
           <textarea
-            placeholder={'YouTube の URL（1 行に 1 件、複数可）\nhttps://www.youtube.com/watch?v=...'}
+            placeholder={'体育指導の YouTube URL（1 行に 1 件、複数可）\nhttps://www.youtube.com/watch?v=...'}
             value={urls}
             onChange={e => setUrls(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); }}
@@ -357,7 +361,7 @@ function AddView({ health, onAdded, notify, isFirstUse, onOpenHelp }) {
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
           >
-            録音ファイル（mp3 / m4a）をここにドロップ、または
+            叡智講義の録音ファイル（mp3 / m4a）をここにドロップ、または
             <label className="file-btn">
               ファイルを選択
               <input ref={fileRef} type="file" accept=".mp3,.m4a" multiple style={{ display: 'none' }}
@@ -389,6 +393,7 @@ function AddView({ health, onAdded, notify, isFirstUse, onOpenHelp }) {
             <div className="flow-step">
               <span className="num">1</span><b>自動で処理</b>
               <p>ダウンロード → 文字起こし → 以下の有効な処理。1 件ずつ順番に進みます。</p>
+              <p><b>YouTube</b> は体育指導、<b>録音ファイル</b>は叡智講義として、それぞれ専用の形式でまとめ、Notion の別の DB に登録します。</p>
               <div className="chips">
                 {integrations.map(([label, key]) => (
                   <span key={key} className={`chip${['ok', 'warn'].includes(status(key)) ? ' on' : ''}`}
@@ -735,6 +740,7 @@ function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
         </div>
         <div className="detail-sub">
           <span>#{job.id}</span>
+          <span className={`kind-label kind-${job.source_type}`}>{SOURCE_LABEL[job.source_type] || job.source_type}</span>
           {listJob.recording_date && listJob.recording_date !== '不明' && <span>録画日 {listJob.recording_date}</span>}
           {isYoutube && <a href={job.url} target="_blank" rel="noopener">▶ 元の動画</a>}
           {job.notion_url && <a href={job.notion_url} target="_blank" rel="noopener">Notion で開く</a>}

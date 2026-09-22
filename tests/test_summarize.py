@@ -87,26 +87,34 @@ def test_build_prompt_glossary_literal_only(sample_glossary):
     assert "体液 → 体癖" not in system
 
 
-def test_build_prompt_local_source_adds_note(sample_glossary):
-    _, user = build_prompt(
+def test_build_prompt_local_source_uses_lecture_prompt(sample_glossary):
+    system, user = build_prompt(
         transcript_text="",
         glossary_entries=sample_glossary,
         video_url="C:/some/path.mp3",
         video_title="local-file",
         source_type="local",
     )
-    assert "ローカル音声ファイル" in user
+    assert "叡智講義" in system
+    assert "体育指導の動画" not in system
+    assert "リンクなし" in user
+    # ローカルパスはまとめに不要なので渡さない
+    assert "C:/some/path.mp3" not in user
+    # 用語集は講義用プロンプトにも付く
+    assert "素形部 → 鼠径部" in system
 
 
-def test_build_prompt_youtube_source_no_local_note(sample_glossary):
-    _, user = build_prompt(
+def test_build_prompt_youtube_source_uses_taiiku_prompt(sample_glossary):
+    system, user = build_prompt(
         transcript_text="",
         glossary_entries=sample_glossary,
         video_url="https://x",
         video_title="t",
         source_type="youtube",
     )
-    assert "ローカル音声ファイル" not in user
+    assert "体育指導の動画" in system
+    assert "叡智講義" not in user
+    assert "URL: https://x" in user
 
 
 def test_build_glossary_section_empty():

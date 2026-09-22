@@ -15,7 +15,7 @@ uv run transcribe doctor [--test]
 # urls.txt を一括処理（夜間バッチ向け）
 uv run transcribe run
 
-# ローカル音声ファイルを処理
+# 叡智講義の録音ファイルを処理
 uv run transcribe file path/to/audio.mp3
 
 # ジョブ状況確認（--id でステージ別）
@@ -99,7 +99,7 @@ uv run transcribe run
 
 ### `file`
 
-ローカル音声ファイルを直接文字起こしする。
+叡智講義などの録音ファイルを直接文字起こしする。録音ファイルは叡智講義として講義用の形式でまとめ、`notion.local_database_id` の DB（叡智まとめDB）に登録する。
 
 ```
 uv run transcribe file <path>

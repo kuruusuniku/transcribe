@@ -633,3 +633,79 @@ def test_md_to_blocks_table_split_over_100_rows():
 def test_md_to_blocks_pipe_lines_without_separator_are_paragraphs():
     blocks = md_to_blocks("| a | b |\n| c | d |")
     assert [b["type"] for b in blocks] == ["paragraph", "paragraph"]
+
+
+# ─── DB ごとのプロパティ構成への対応（叡智まとめDB） ───────────────────────
+
+
+def test_fit_properties_to_lecture_db_schema():
+    from transcribe.notion_sync import _fit_properties_to_schema
+
+    props = _build_properties(
+        title="250430 叡智講義",
+        date_str="2025-04-30",
+        video_url="C:/audio/250430.mp3",
+        duration_min=42,
+        source_type="local",
+        tags=["易経"],
+    )
+    schema = {"名前": "title", "日付": "date", "音声時間": "number", "タグ": "multi_select", "まとめ進捗": "checkbox", "カテゴリー": "select"}
+    fitted = _fit_properties_to_schema(props, schema)
+    assert "ソース種別" not in fitted
+    assert "動画時間" not in fitted
+    assert fitted["音声時間"] == {"number": 42}
+    assert fitted["タグ"]["multi_select"] == [{"name": "易経"}]
+
+
+def test_fit_properties_without_schema_is_unchanged():
+    from transcribe.notion_sync import _fit_properties_to_schema
+
+    props = {"名前": {}, "ソース種別": {}}
+    assert _fit_properties_to_schema(props, None) == props
+
+
+def test_date_from_title():
+    from transcribe.notion_sync import _date_from_title
+
+    assert _date_from_title("250430_講義.mp3") == "2025-04-30"
+    assert _date_from_title("20250430 講義") == "2025-04-30"
+    assert _date_from_title("b66d9b0af.mp3") is None
+    assert _date_from_title("251399 講義") is None
+
+
+def test_duration_minutes_falls_back_to_segments(tmp_path):
+    from transcribe.notion_sync import _duration_minutes
+
+    (tmp_path / "segments.json").write_text(json.dumps({"segments": [{"end": 10.0}, {"end": 2530.0}]}), encoding="utf-8")
+    assert _duration_minutes({}, tmp_path) == 42
+    assert _duration_minutes({"duration_minutes": 7}, tmp_path) == 7
+
+
+@patch("transcribe.notion_sync._query_notion_db")
+@patch("transcribe.notion_sync.Client")
+def test_sync_local_to_lecture_db_uses_schema(mock_client_cls, mock_query_db, tmp_path):
+    from transcribe.notion_sync import _schema_cache
+
+    _schema_cache.clear()
+    cfg = NotionConfig(enabled=True, token="t", database_id="video-db", local_database_id="lecture-db")
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.databases.retrieve.return_value = {
+        "properties": {"名前": {"type": "title"}, "日付": {"type": "date"}, "音声時間": {"type": "number"},
+                       "タグ": {"type": "multi_select"}, "まとめ進捗": {"type": "checkbox"}},
+    }
+    mock_client.pages.create.return_value = {"id": "p1"}
+
+    d = tmp_path / "out"
+    d.mkdir()
+    (d / "summary.md").write_text("# まとめ\n\n### 主要キーワード\n* 中道\n", encoding="utf-8")
+    (d / "meta.json").write_text(json.dumps({"title": "250430 講義.mp3", "recording_date": "不明", "duration_minutes": 55}), encoding="utf-8")
+
+    assert sync_to_notion(d, "C:/audio/250430 講義.mp3", cfg, "local") is True
+    kwargs = mock_client.pages.create.call_args.kwargs
+    assert kwargs["parent"] == {"database_id": "lecture-db"}
+    props = kwargs["properties"]
+    assert set(props) == {"名前", "日付", "音声時間", "タグ", "まとめ進捗"}
+    assert props["日付"] == {"date": {"start": "2025-04-30"}}
+    assert props["音声時間"] == {"number": 55}
+    _schema_cache.clear()

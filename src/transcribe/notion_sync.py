@@ -247,6 +247,80 @@ def _build_properties(
     return props
 
 
+# 収録時間を入れるプロパティ名の候補（体育動画まとめDB は「動画時間」、叡智まとめDB は「音声時間」）
+_DURATION_PROPERTIES = ("動画時間", "音声時間")
+
+_schema_cache: dict[str, dict[str, str]] = {}
+
+
+def _get_db_schema(client, database_id: str) -> dict[str, str] | None:
+    """DB のプロパティ名 → 型 を返す。取得できない場合は None（そのまま送信する）。"""
+    if database_id in _schema_cache:
+        return _schema_cache[database_id]
+    try:
+        db = client.databases.retrieve(database_id=database_id)
+        props = db.get("properties") if isinstance(db, dict) else None
+        if not isinstance(props, dict):
+            return None
+        schema = {name: p.get("type", "") for name, p in props.items()}
+    except Exception as e:
+        logger.warning(f"Notion DB のプロパティ構成を取得できません（そのまま送信します）: {e}")
+        return None
+    _schema_cache[database_id] = schema
+    return schema
+
+
+def _fit_properties_to_schema(props: dict, schema: dict[str, str] | None) -> dict:
+    """DB に存在しないプロパティを除き、収録時間のプロパティ名を DB に合わせる。
+
+    DB ごとにプロパティ構成が違っても（URL・ソース種別がない等）同期できるようにする。
+    """
+    if schema is None:
+        return props
+    fitted = dict(props)
+    duration = next((fitted.pop(k) for k in _DURATION_PROPERTIES if k in fitted), None)
+    if duration is not None:
+        target = next((k for k in _DURATION_PROPERTIES if schema.get(k) == "number"), None)
+        if target:
+            fitted[target] = duration
+    dropped = [k for k in fitted if k not in schema]
+    for k in dropped:
+        fitted.pop(k)
+    if dropped:
+        logger.debug(f"Notion DB に存在しないプロパティを除外: {dropped}")
+    return fitted
+
+
+def _duration_minutes(meta: dict, output_dir: Path) -> int | None:
+    """収録時間（分）。meta.json になければ segments.json の最終セグメントから求める。"""
+    if meta.get("duration_minutes"):
+        return int(meta["duration_minutes"])
+    seg_path = output_dir / "segments.json"
+    try:
+        segments = json.loads(seg_path.read_text(encoding="utf-8")).get("segments", [])
+    except Exception:
+        return None
+    if not segments:
+        return None
+    return round(segments[-1].get("end", 0) / 60)
+
+
+_TITLE_DATE_RE = re.compile(r"^(\d{2}|\d{4})(\d{2})(\d{2})(?!\d)")
+
+
+def _date_from_title(title: str) -> str | None:
+    """「250430 講義名」「20250430_講義.mp3」のような先頭の日付を YYYY-MM-DD にする。"""
+    m = _TITLE_DATE_RE.match(title or "")
+    if not m:
+        return None
+    year, month, day = m.groups()
+    if len(year) == 2:
+        year = f"20{year}"
+    if not (1 <= int(month) <= 12 and 1 <= int(day) <= 31):
+        return None
+    return f"{year}-{month}-{day}"
+
+
 def _list_child_block_ids(client, page_id: str) -> list[str]:
     """ページ直下のブロック ID を全件取得する（削除前に一覧を確定させ、ページング中の削除でカーソルがずれるのを防ぐ）。"""
     ids: list[str] = []
@@ -352,11 +426,15 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_t
     title = meta.get("title") or output_dir.stem
     recording_date = meta.get("recording_date")
     date_str = recording_date if recording_date and recording_date != "不明" else None
-    duration_min = meta.get("duration_minutes")
+    if date_str is None and source_type == "local":
+        # 録音ファイルは公開日がないため、ファイル名先頭の日付（例: 250430_講義.mp3）を使う
+        date_str = _date_from_title(title)
+    duration_min = _duration_minutes(meta, output_dir)
 
     client = Client(auth=cfg.token)
     tags = _extract_tags_from_summary(summary_text)
     props = _build_properties(title, date_str, video_url, duration_min, source_type, tags)
+    props = _fit_properties_to_schema(props, _get_db_schema(client, target_db_id))
     blocks = md_to_blocks(summary_text)
 
     existing_page_id: str | None = None

@@ -41,7 +41,7 @@ from .summarize import generate_summary
 from .sync import sync_job
 from .utils import ensure_dir, normalize_youtube_url
 
-app = typer.Typer(name="transcribe", add_completion=False, help="YouTube動画・ローカル音声ファイル 自動文字起こしツール")
+app = typer.Typer(name="transcribe", add_completion=False, help="体育指導の YouTube 動画・叡智講義の録音ファイル 自動文字起こし・まとめツール")
 console = Console()
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -145,7 +145,7 @@ def run(
 def file(
     path: Path = typer.Argument(..., help="音声ファイルパス（mp3 / m4a）"),
 ) -> None:
-    """ローカル音声ファイル（mp3 / m4a）を文字起こしする"""
+    """叡智講義などの録音ファイル（mp3 / m4a）を文字起こしする"""
     cfg, glossary = _load_cfg_and_glossary()
 
     resolved = Path(path).resolve()
