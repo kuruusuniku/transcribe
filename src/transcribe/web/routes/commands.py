@@ -132,11 +132,16 @@ async def resume_post(body: ResumePostBody):
 async def queue_status():
     from ..worker import worker
 
-    current = worker.current
-    return {
-        "running": " ".join(current.args) if current is not None else None,
-        "pending": worker.pending_count(),
-    }
+    return worker.status()
+
+
+@router.post("/tasks/{task_id}/cancel")
+async def cancel_task(task_id: str):
+    from ..worker import worker
+
+    if not worker.cancel(task_id):
+        raise HTTPException(status_code=404, detail="待機中のタスクが見つかりません（すでに実行中か完了しています）")
+    return {"ok": True}
 
 
 @router.get("/health")

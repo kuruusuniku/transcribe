@@ -41,7 +41,9 @@ def _attention(job: dict, stages: dict, enabled_post: list[str]) -> list[str]:
     for stage in POST_STAGES:
         if stages.get(stage, {}).get("status") == "failed":
             reasons.append(f"{STAGE_NAMES[stage]}に失敗しました")
-    if "summarize" in enabled_post and not job.get("summarized_at") and "summarize" not in stages:
+    if job.get("summary_truncated"):
+        reasons.append("まとめが途中で切れています")
+    elif "summarize" in enabled_post and not job.get("summarized_at") and "summarize" not in stages:
         reasons.append("まとめがありません")
     # 低信頼セグメント（要確認箇所）は必須の対応ではないため attention には含めず、一覧で件数だけ表示する
     return reasons
@@ -63,6 +65,9 @@ async def list_jobs(cfg: ConfigDep):
         job["stages"] = stages
         job["recording_date"] = meta.get("recording_date")
         job["low_confidence_count"] = meta.get("low_confidence_count", 0)
+        job["summary_truncated"] = bool(
+            job["output_dir"] and (Path(job["output_dir"]) / "summary.truncated.md").exists()
+        )
         job["in_progress"] = job["status"] in _IN_PROGRESS or job["status"] == "queued"
         job["progress"] = stages.get("transcribe", {}).get("progress") if job["status"] == "transcribing" else None
         job["attention"] = _attention(job, stages, enabled_post)
@@ -79,6 +84,7 @@ async def get_job(job_id: int, cfg: ConfigDep):
     out = Path(job["output_dir"]) if job["output_dir"] else None
     job["has_transcript"] = bool(out and (out / "transcript.md").exists())
     job["has_summary"] = bool(out and (out / "summary.md").exists())
+    job["summary_truncated"] = bool(out and (out / "summary.truncated.md").exists())
     job["notion_url"] = None
     if out and (out / "notion.json").exists():
         try:

@@ -433,3 +433,27 @@ def test_run_file_accepts_new_audio(client):
     assert res.json()["task_id"] == "t-new"
     cmd = mock_st.call_args.args[0]
     assert cmd[0] == "file" and cmd[1].endswith("fresh.mp3")
+
+
+def test_queue_status_shape(client):
+    body = client.get("/api/queue").json()
+    assert set(body) == {"running", "pending"}
+    assert isinstance(body["pending"], list)
+
+
+def test_cancel_unknown_task(client):
+    res = client.post("/api/tasks/unknown-id/cancel")
+    assert res.status_code == 404
+
+
+def test_truncated_summary_marked_as_attention(client, mock_config, tmp_db, tmp_output):
+    job_id = upsert_job(tmp_db, "https://www.youtube.com/watch?v=truncated01")
+    out = tmp_output / "truncated"
+    out.mkdir()
+    (out / "summary.truncated.md").write_text("途中まで", encoding="utf-8")
+    update_status(tmp_db, job_id, "done", output_dir=str(out))
+
+    job = next(j for j in client.get("/api/jobs").json() if j["id"] == job_id)
+    assert job["summary_truncated"] is True
+    assert "まとめが途中で切れています" in job["attention"]
+    assert client.get(f"/api/jobs/{job_id}").json()["summary_truncated"] is True

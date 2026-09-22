@@ -68,6 +68,7 @@ class LoggingConfig:
     level: str = "INFO"
     console: bool = True
     file: bool = True
+    retention_days: int = 30  # これより古いログファイルは起動時に削除
 
 
 @dataclass
@@ -224,6 +225,7 @@ def load_config(config_path: Path) -> AppConfig:
         level=log_raw.get("level", "INFO"),
         console=log_raw.get("console", True),
         file=log_raw.get("file", True),
+        retention_days=log_raw.get("retention_days", 30),
     )
 
     gd_raw = raw.get("google_docs", {})

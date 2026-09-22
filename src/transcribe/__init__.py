@@ -8,12 +8,28 @@ from pathlib import Path
 from rich.logging import RichHandler
 
 
+def _purge_old_logs(log_dir: Path, retention_days: int) -> None:
+    """保存期間を過ぎたログファイルを削除する。"""
+    if retention_days <= 0:
+        return
+    import time  # noqa: PLC0415
+
+    threshold = time.time() - retention_days * 86400
+    for f in log_dir.glob("*.log"):
+        try:
+            if f.stat().st_mtime < threshold:
+                f.unlink()
+        except OSError:
+            pass
+
+
 def setup_logging(
     level: str,
     log_dir: Path,
     *,
     console: bool = True,
     file: bool = True,
+    retention_days: int = 30,
 ) -> None:
     log_level = getattr(logging, level.upper(), logging.INFO)
     root = logging.getLogger()
@@ -43,4 +59,5 @@ def setup_logging(
         fh.setLevel(log_level)
         fh.setFormatter(fmt)
         fh._transcribe_handler = True  # type: ignore[attr-defined]
+        _purge_old_logs(log_dir, retention_days)
         root.addHandler(fh)

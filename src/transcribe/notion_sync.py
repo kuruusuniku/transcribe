@@ -14,6 +14,7 @@ from .config import NotionConfig
 logger = logging.getLogger(__name__)
 
 _RICH_TEXT_LIMIT = 2000
+_TAG_NAME_LIMIT = 100  # Notion の multi_select オプション名の上限
 _BLOCKS_PER_REQUEST = 100
 _NOTION_503_RETRY_BACKOFFS_SEC = (5, 10, 20)
 
@@ -217,7 +218,7 @@ def _extract_tags_from_summary(summary_text: str) -> list[str]:
                 continue
             m = re.match(r"^[*\-]\s+(.+)", line.strip())
             if m:
-                tag = m.group(1).strip().replace(",", "・")
+                tag = m.group(1).strip().replace(",", "・")[:_TAG_NAME_LIMIT]
                 if tag and tag not in seen:
                     seen.add(tag)
                     tags.append(tag)
@@ -424,6 +425,9 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_t
     meta = _read_meta(output_dir)
 
     title = meta.get("title") or output_dir.stem
+    if source_type == "local":
+        # 録音ファイルはファイル名がタイトルになるため拡張子を落とす
+        title = Path(title).stem
     recording_date = meta.get("recording_date")
     date_str = recording_date if recording_date and recording_date != "不明" else None
     if date_str is None and source_type == "local":

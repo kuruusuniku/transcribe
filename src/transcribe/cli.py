@@ -56,7 +56,11 @@ SUPPORTED_AUDIO_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".m4a"})
 def _load_cfg_and_glossary():
     cfg = load_config(_CONFIG_PATH)
     glossary = load_glossary(_GLOSSARY_PATH)
-    setup_logging(cfg.logging.level, cfg.log_dir, console=cfg.logging.console, file=cfg.logging.file)
+    setup_logging(
+        cfg.logging.level, cfg.log_dir,
+        console=cfg.logging.console, file=cfg.logging.file,
+        retention_days=cfg.logging.retention_days,
+    )
     ensure_dir(cfg.work_dir)
     ensure_dir(cfg.output_dir)
     ensure_dir(cfg.log_dir)

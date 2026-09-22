@@ -102,6 +102,39 @@ function isInProgress(job) {
   return job.in_progress;
 }
 
+function formatRemaining(seconds) {
+  if (!isFinite(seconds) || seconds <= 0) return null;
+  const min = Math.round(seconds / 60);
+  if (min < 1) return '1 分未満';
+  if (min < 60) return `約 ${min} 分`;
+  return `約 ${Math.floor(min / 60)} 時間 ${min % 60} 分`;
+}
+
+// 進捗の伸び方から残り時間を推定する（ジョブごとに前回の観測値を保持）
+const etaSamples = new Map();
+
+function estimateRemaining(job) {
+  if (job.status !== 'transcribing' || job.progress == null) {
+    etaSamples.delete(job.id);
+    return null;
+  }
+  const now = Date.now();
+  const prev = etaSamples.get(job.id);
+  if (!prev || job.progress < prev.progress) {
+    etaSamples.set(job.id, { progress: job.progress, at: now, eta: null });
+    return null;
+  }
+  if (job.progress > prev.progress) {
+    const rate = (job.progress - prev.progress) / ((now - prev.at) / 1000);
+    const eta = rate > 0 ? (1 - job.progress) / rate : null;
+    // 直前の推定と平均して細かい上下を抑える
+    const smoothed = prev.eta && eta ? prev.eta * 0.5 + eta * 0.5 : eta;
+    etaSamples.set(job.id, { progress: job.progress, at: now, eta: smoothed });
+    return formatRemaining(smoothed);
+  }
+  return prev.eta ? formatRemaining(prev.eta - (now - prev.at) / 1000) : null;
+}
+
 // ─── 共通コンポーネント ────────────────────────────────────────────────────
 
 function StatusLabel({ status }) {
@@ -181,22 +214,42 @@ function HelpModal({ onClose }) {
 
 // ─── ヘッダー ──────────────────────────────────────────────────────────────
 
-function QueueIndicator({ jobs, queue, onOpenJob }) {
+function QueueIndicator({ jobs, queue, onOpenJob, onCancel }) {
+  const [open, setOpen] = useState(false);
   const running = jobs.find(j => ['downloading', 'separating', 'transcribing', 'formatting'].includes(j.status));
-  const waiting = jobs.filter(j => j.status === 'queued').length;
+  const pending = queue.pending || [];
   const busy = Boolean(running) || Boolean(queue.running);
-  if (!busy && waiting === 0 && !queue.pending) {
+
+  if (!busy && pending.length === 0) {
     return <span className="queue-indicator">待機中のジョブはありません</span>;
   }
   const pct = running && running.progress != null ? ` ${Math.round(running.progress * 100)}%` : '';
   return (
-    <span className={`queue-indicator${busy ? ' busy' : ''}`} style={{ cursor: running ? 'pointer' : 'default' }}
-      onClick={() => running && onOpenJob(running.id)} title="クリックで処理中のジョブを開く">
-      {busy && <span className="spinner" />}
-      {running
-        ? <>#{running.id} {STATUS_LABEL[running.status]}{pct}</>
-        : queue.running ? <>処理中: {queue.running.split(' ')[0]}</> : '処理待ち'}
-      {(waiting > 0 || queue.pending > 0) && <> ・ 待ち {Math.max(waiting, queue.pending)} 件</>}
+    <span style={{ position: 'relative' }}>
+      <span className={`queue-indicator${busy ? ' busy' : ''}`} style={{ cursor: 'pointer' }}
+        onClick={() => (pending.length ? setOpen(o => !o) : running && onOpenJob(running.id))}
+        title={pending.length ? 'クリックで待機中の一覧を開く' : 'クリックで処理中のジョブを開く'}>
+        {busy && <span className="spinner" />}
+        {running
+          ? <>#{running.id} {STATUS_LABEL[running.status]}{pct}{running.eta ? ` ・ 残り ${running.eta}` : ''}</>
+          : queue.running ? <>処理中: {queue.running.label}</> : '処理待ち'}
+        {pending.length > 0 && <> ・ 待ち {pending.length} 件 ▾</>}
+      </span>
+      {open && pending.length > 0 && (
+        <div className="menu" style={{ left: 0, right: 'auto', minWidth: 300 }} onMouseLeave={() => setOpen(false)}>
+          {queue.running && (
+            <div style={{ padding: '6px 10px', fontSize: 11.5, color: 'var(--text-dim)' }}>
+              実行中: {queue.running.label}（取り消せません）
+            </div>
+          )}
+          {pending.map((t, i) => (
+            <div key={t.task_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px' }}>
+              <span style={{ flex: 1, fontSize: 12 }}>{i + 1}. {t.label}</span>
+              <button onClick={() => { onCancel(t.task_id); setOpen(false); }}>取り消す</button>
+            </div>
+          ))}
+        </div>
+      )}
     </span>
   );
 }
@@ -235,7 +288,12 @@ function JobRow({ job, selected, onSelect, enabledPost }) {
           <span className="review-badge" title="聞き取りの自信が低い箇所の数（文字起こし画面で黄色表示）">要確認 {job.low_confidence_count}</span>
         )}
       </div>
-      {job.status === 'transcribing' && <ProgressBar value={job.progress} />}
+      {job.status === 'transcribing' && (
+        <>
+          <ProgressBar value={job.progress} />
+          {job.eta && <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>残り {job.eta}</div>}
+        </>
+      )}
       {['downloading', 'separating', 'formatting'].includes(job.status) && <ProgressBar value={null} />}
       {attention && <div className="job-row-attention">⚠ {job.attention.join(' / ')}</div>}
     </div>
@@ -599,6 +657,15 @@ function SummaryTab({ jobId, version, job, summarizeEnabled, onSummarize }) {
 
   if (content === null) return <div className="empty-state">読み込み中…</div>;
   if (!content) {
+    if (job?.summary_truncated) {
+      return (
+        <div className="empty-state">
+          まとめが出力上限に達して途中で切れたため、保存されていません。<br />
+          config.yaml の <code>summarize.max_output_tokens</code> を増やしてから作り直してください。
+          {onSummarize && <div style={{ marginTop: 8 }}><button className="primary" onClick={onSummarize}>まとめを作り直す</button></div>}
+        </div>
+      );
+    }
     if (job?.status !== 'done') return <div className="empty-state">文字起こしが終わると、自動でまとめが作成されます。</div>;
     return (
       <div className="empty-state">
@@ -767,10 +834,18 @@ function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
             </div>
           </div>
         )}
+        {job.summary_truncated && (
+          <div className="banner error">
+            <div className="banner-body">
+              <b>まとめが途中で切れています。</b> AI の出力上限に達しました。<br />
+              <small>config.yaml の summarize.max_output_tokens を増やしてから「その他 → まとめを作り直す」を実行してください。途中までの出力は出力フォルダの summary.truncated.md にあります。</small>
+            </div>
+          </div>
+        )}
         {inProgress && (
           <div className="banner info">
             <div className="banner-body">
-              {STATUS_LABEL[job.status]}{listJob.progress != null && job.status === 'transcribing' ? `（${Math.round(listJob.progress * 100)}%）` : ''}。完了まで自動で進みます。
+              {STATUS_LABEL[job.status]}{listJob.progress != null && job.status === 'transcribing' ? `（${Math.round(listJob.progress * 100)}%）` : ''}{listJob.eta ? ` ・ 残り ${listJob.eta}` : ''}。完了まで自動で進みます。
               <div style={{ marginTop: 6 }}><ProgressBar value={job.status === 'transcribing' ? listJob.progress : null} /></div>
             </div>
           </div>
@@ -1234,7 +1309,7 @@ function App() {
   const [jobs, setJobs] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [queue, setQueue] = useState({ running: null, pending: 0 });
+  const [queue, setQueue] = useState({ running: null, pending: [] });
   const [health, setHealth] = useState([]);
   const [view, setView] = useState('add');
   const [selectedJobId, setSelectedJobId] = useState(null);
@@ -1259,7 +1334,7 @@ function App() {
   const fetchJobs = useCallback(async () => {
     try {
       const [data, q] = await Promise.all([apiFetch('/api/jobs'), apiFetch('/api/queue')]);
-      setJobs([...data].reverse());
+      setJobs([...data].reverse().map(j => ({ ...j, eta: estimateRemaining(j) })));
       setQueue(q);
       setLoaded(true);
       setOffline(false);
@@ -1317,6 +1392,15 @@ function App() {
   const selectedJob = jobs.find(j => j.id === selectedJobId);
 
   const openJob = (id) => { setSelectedJobId(id); setView('job'); };
+  const cancelTask = async (taskId) => {
+    try {
+      await postJson(`/api/tasks/${taskId}/cancel`);
+      notify('待機中のタスクを取り消しました。', 'success');
+      fetchJobs();
+    } catch (e) {
+      notify(`取り消せませんでした: ${e.message}`, 'error');
+    }
+  };
   const go = (v) => { setView(v); if (v !== 'job') setSelectedJobId(null); if (v === 'settings') fetchHealth(); };
   const closeHelp = () => { setShowHelp(false); storageSet('transcribe.helpSeen', true); };
 
@@ -1342,7 +1426,7 @@ function App() {
       <header className="app-header">
         <span className="app-title" onClick={() => go('add')}>transcribe<small>文字起こし・まとめ</small></span>
         <button className={`nav-btn${view === 'add' ? ' active' : ''}`} onClick={() => go('add')}>＋ 追加</button>
-        <QueueIndicator jobs={jobs} queue={queue} onOpenJob={openJob} />
+        <QueueIndicator jobs={jobs} queue={queue} onOpenJob={openJob} onCancel={cancelTask} />
         <span className="header-spacer" />
         <button className={`nav-btn${view === 'glossary' ? ' active' : ''}`} onClick={() => go('glossary')} title="誤認識しやすい言葉の登録">用語辞書</button>
         <button className={`nav-btn${view === 'tools' ? ' active' : ''}`} onClick={() => go('tools')} title="一括処理・変換など">ツール</button>

@@ -32,6 +32,40 @@ class Task:
     queue: asyncio.Queue
     cleanup: Path | None = None
     lines: list[str] = field(default_factory=list)
+    cancelled: bool = False
+
+    @property
+    def label(self) -> str:
+        """画面に出す作業名。"""
+        return describe_command(self.args)
+
+
+def describe_command(args: list[str]) -> str:
+    if not args:
+        return "処理"
+    head = args[0]
+    rest = args[1:]
+    if head == "run":
+        return "URL の文字起こし"
+    if head == "file":
+        return f"文字起こし: {Path(rest[0]).name}" if rest else "文字起こし"
+    if head == "retry":
+        return f"再開: ジョブ #{rest[0]}" if rest else "再開"
+    if head == "rerun":
+        return f"最初からやり直す: ジョブ #{rest[0]}" if rest else "最初からやり直す"
+    if head == "resume-post":
+        return f"後処理のやり直し: ジョブ #{rest[0]}" if rest else "後処理のやり直し"
+    if head == "summarize":
+        return f"まとめ生成{' #' + rest[1] if '--id' in rest else '（未処理分）' if '--all' not in rest else '（全件）'}"
+    if head == "sync":
+        return "Google Docs 登録" + ("（全件）" if "--all" in rest else "（未処理分）")
+    if head == "sync-notion":
+        return "Notion 登録" + ("（全件）" if "--all" in rest else "（未処理分）")
+    if head == "delete":
+        return f"削除: ジョブ #{rest[0]}" if rest else "削除"
+    if head == "clean":
+        return "一時ファイルの削除"
+    return " ".join(args)
 
 
 class TaskWorker:
@@ -40,7 +74,7 @@ class TaskWorker:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._idle_release_seconds = idle_release_seconds
-        self._pending = 0
+        self._pending: list[Task] = []
         self.current: Task | None = None
 
     def ensure_started(self) -> None:
@@ -55,14 +89,40 @@ class TaskWorker:
 
     def pending_count(self) -> int:
         with self._lock:
-            return self._pending
+            return len(self._pending)
+
+    def status(self) -> dict:
+        """実行中・待機中のタスク一覧（画面表示・取り消し用）。"""
+        with self._lock:
+            current = self.current
+            pending = list(self._pending)
+        return {
+            "running": {"task_id": current.id, "label": current.label} if current else None,
+            "pending": [{"task_id": t.id, "label": t.label} for t in pending],
+        }
+
+    def cancel(self, task_id: str) -> bool:
+        """待機中のタスクを取り消す。実行中のタスクは取り消せない。"""
+        with self._lock:
+            for t in self._pending:
+                if t.id == task_id:
+                    t.cancelled = True
+                    self._pending.remove(t)
+                    break
+            else:
+                return False
+        self._emit(t, "[取り消しました]")
+        self._finish(t, "[取り消し]")
+        if t.cleanup is not None:
+            t.cleanup.unlink(missing_ok=True)
+        return True
 
     def submit(self, task: Task) -> int:
         """タスクを投入し、先に待っているタスク数を返す。"""
         self.ensure_started()
         with self._lock:
-            ahead = self._pending + (1 if self.current is not None else 0)
-            self._pending += 1
+            ahead = len(self._pending) + (1 if self.current is not None else 0)
+            self._pending.append(task)
         self._queue.put(task)
         return ahead
 
@@ -76,7 +136,10 @@ class TaskWorker:
                 self._release_models()
                 continue
             with self._lock:
-                self._pending -= 1
+                if task in self._pending:
+                    self._pending.remove(task)
+                if task.cancelled:
+                    continue
                 self.current = task
             try:
                 self._execute(task)

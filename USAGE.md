@@ -435,6 +435,7 @@ BGM が小さい動画では `false` 推奨。有効化すると 1 時間動画�
 | `level` | `INFO` | ログレベル（`DEBUG` / `INFO` / `WARNING` / `ERROR`） |
 | `console` | `true` | コンソールへの出力 |
 | `file` | `true` | `log_dir` へのファイル出力 |
+| `retention_days` | `30` | これより古いログファイルを起動時に削除（`0` で無効） |
 
 ---
 

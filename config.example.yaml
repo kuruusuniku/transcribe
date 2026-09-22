@@ -72,6 +72,7 @@ logging:
   level: INFO
   console: true
   file: true
+  retention_days: 30      # これより古いログファイルは起動時に削除（0 で無効）
 
 google_docs:
   enabled: false                    # true にすると パイプライン完了時に自動同期

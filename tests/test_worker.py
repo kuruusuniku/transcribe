@@ -45,3 +45,44 @@ def test_worker_runs_cli_in_process_sequentially():
     assert help_lines[-1] == "[完了 (exit=0)]"
     # 出力ルーター未導入（テスト環境）のため、コマンドの出力行は届かず完了行のみ
     assert bad_lines[-1] == "[完了 (exit=2)]"
+
+
+def test_describe_command_labels():
+    from transcribe.web.worker import describe_command
+
+    assert describe_command(["file", "C:/a/講義.mp3"]) == "文字起こし: 講義.mp3"
+    assert describe_command(["retry", "12"]) == "再開: ジョブ #12"
+    assert describe_command(["resume-post", "7"]) == "後処理のやり直し: ジョブ #7"
+    assert describe_command(["sync-notion", "--all"]) == "Notion 登録（全件）"
+    assert describe_command(["clean"]) == "一時ファイルの削除"
+
+
+def test_cancel_pending_task():
+    async def submit():
+        return [start_task(["--help"]), start_task(["status"]), start_task(["status"])]
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        from transcribe.web.worker import worker
+
+        ids = loop.run_until_complete(submit())
+        # 2 番目以降は待機中のはずなので取り消せる（1 番目は実行中の可能性がある）
+        cancelled = [t for t in ids[1:] if worker.cancel(t)]
+        assert cancelled, "待機中のタスクを取り消せなかった"
+
+        async def drain():
+            for tid in ids:
+                q = active_tasks.get(tid)
+                if q is None:
+                    continue
+                lines = []
+                while (line := await asyncio.wait_for(q.get(), 30)) is not None:
+                    lines.append(line)
+                if tid in cancelled:
+                    assert "[取り消し]" in lines[-1]
+
+        loop.run_until_complete(drain())
+        assert worker.cancel("no-such-task") is False
+    finally:
+        loop.close()
