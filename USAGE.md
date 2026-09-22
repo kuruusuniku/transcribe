@@ -30,7 +30,7 @@ uv run transcribe web
 ```
 uv run transcribe web
 uv run transcribe web --port 9000
-uv run transcribe web --host 0.0.0.0  # LAN内に公開（注意）
+uv run transcribe web --host 0.0.0.0  # LAN内に公開（web.token の設定が必須）
 ```
 
 ### 画面構成
@@ -213,15 +213,23 @@ uv run transcribe web [--host HOST] [--port PORT]
 |---|---|
 | `--host HOST` | バインドアドレス（デフォルト: `127.0.0.1`） |
 | `--port PORT` | ポート番号（デフォルト: `8000`） |
+| `--insecure` | トークン未設定のまま 127.0.0.1 以外で公開する（非推奨） |
 
 起動後 http://localhost:8000 をブラウザで開く。ログのリアルタイム確認、mp3/m4a アップロード、transcript.md / summary.md のインライン閲覧が可能。
+
+**アクセス制御**
+
+- 他サイトからのリクエスト（Origin が一致しないもの）は常に拒否される。
+- `config.yaml` の `web.token`（または環境変数 `TRANSCRIBE_WEB_TOKEN`）を設定するとトークン認証が有効になる。初回は `http://<host>:<port>/?token=<token>` で開くと Cookie が発行され、以降はトークンなしで使える。
+- `--host` が `127.0.0.1` 以外の場合、トークン未設定だと起動しない。
+- Web UI からアップロードしたファイルは `data/uploads/` に保存され、retry / rerun に使われる（自動削除されない）。
 
 **例**
 
 ```
 uv run transcribe web
 uv run transcribe web --port 9000
-uv run transcribe web --host 0.0.0.0 --port 8000   # LAN 内に公開（注意）
+uv run transcribe web --host 0.0.0.0 --port 8000   # LAN 内に公開（web.token の設定が必須）
 ```
 
 ---
