@@ -56,14 +56,65 @@ def _md_line_to_block(line: str) -> dict | None:
     return {"type": "paragraph", "paragraph": {"rich_text": _parse_rich_text(line)}}
 
 
+_TABLE_SEPARATOR_RE = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+# Notion の配列要素上限（100）に収めるため、ヘッダー行を含めた 1 テーブルあたりの行数を制限する
+_TABLE_MAX_ROWS = 100
+
+
+def _split_table_row(line: str) -> list[str]:
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+    return [cell.strip() for cell in stripped.split("|")]
+
+
+def _table_to_blocks(table_lines: list[str]) -> list[dict]:
+    """Markdown テーブル行を Notion の table ブロックに変換する。区切り行がなければ段落として扱う。"""
+    if len(table_lines) < 2 or not _TABLE_SEPARATOR_RE.match(table_lines[1].strip()):
+        return [b for b in (_md_line_to_block(line) for line in table_lines) if b is not None]
+
+    header = _split_table_row(table_lines[0])
+    body = [_split_table_row(line) for line in table_lines[2:]]
+    width = len(header)
+
+    def _row(cells: list[str]) -> dict:
+        cells = (cells + [""] * width)[:width]
+        return {"type": "table_row", "table_row": {"cells": [_parse_rich_text(c) for c in cells]}}
+
+    blocks: list[dict] = []
+    chunk_size = _TABLE_MAX_ROWS - 1
+    for i in range(0, max(len(body), 1), chunk_size):
+        rows = [_row(header)] + [_row(r) for r in body[i : i + chunk_size]]
+        blocks.append({
+            "type": "table",
+            "table": {
+                "table_width": width,
+                "has_column_header": True,
+                "has_row_header": False,
+                "children": rows,
+            },
+        })
+    return blocks
+
+
 def md_to_blocks(text: str) -> list[dict]:
     blocks: list[dict] = []
     lines = text.splitlines()
     in_code = False
     code_lines: list[str] = []
     code_lang = ""
+    table_lines: list[str] = []
 
     for line in lines:
+        if not in_code and line.lstrip().startswith("|"):
+            table_lines.append(line)
+            continue
+        if table_lines:
+            blocks.extend(_table_to_blocks(table_lines))
+            table_lines = []
+
         if line.startswith("```"):
             if not in_code:
                 in_code = True
@@ -88,6 +139,9 @@ def md_to_blocks(text: str) -> list[dict]:
             block = _md_line_to_block(line)
             if block is not None:
                 blocks.append(block)
+
+    if table_lines:
+        blocks.extend(_table_to_blocks(table_lines))
 
     if in_code and code_lines:
         code_content = "\n".join(code_lines)

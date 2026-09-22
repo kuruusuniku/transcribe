@@ -605,3 +605,31 @@ def test_replace_page_body_deletes_old_after_append():
 
     deleted = [c.kwargs["block_id"] for c in client.blocks.delete.call_args_list]
     assert deleted == ["old1", "old2"]
+
+
+# ─── md_to_blocks: Markdown テーブル ─────────────────────────────────────
+
+
+def test_md_to_blocks_table():
+    md = "| 番号 | タイトル |\n| :--- | :--- |\n| 1 | **導入** |\n| 2 |\n後の段落"
+    blocks = md_to_blocks(md)
+    assert [b["type"] for b in blocks] == ["table", "paragraph"]
+    table = blocks[0]["table"]
+    assert table["table_width"] == 2
+    assert table["has_column_header"] is True
+    rows = table["children"]
+    assert len(rows) == 3
+    assert all(len(r["table_row"]["cells"]) == 2 for r in rows)
+    assert rows[1]["table_row"]["cells"][1][0]["annotations"]["bold"] is True
+
+
+def test_md_to_blocks_table_split_over_100_rows():
+    md = "| a |\n| --- |\n" + "\n".join(f"| {i} |" for i in range(150))
+    blocks = md_to_blocks(md)
+    assert [b["type"] for b in blocks] == ["table", "table"]
+    assert all(len(b["table"]["children"]) <= 100 for b in blocks)
+
+
+def test_md_to_blocks_pipe_lines_without_separator_are_paragraphs():
+    blocks = md_to_blocks("| a | b |\n| c | d |")
+    assert [b["type"] for b in blocks] == ["paragraph", "paragraph"]
