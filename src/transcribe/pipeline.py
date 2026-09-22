@@ -237,26 +237,32 @@ def _run_job(
     audio_path = separate_audio(audio_path, work_dir, cfg)
     audio_separation_used = cfg.audio_separation.enabled
 
-    # 3→4. 文字起こし + 後処理（ジェネレータチェーン: Whisper出力を逐次後処理）
-    update_status(db, job_id, "transcribing")
-    raw_gen = transcribe(audio_path, cfg, glossary, model_cache)
-    processed_gen = postprocess(raw_gen, cfg, glossary)
-    compressed_gen = compress_repetitions(processed_gen)
+    try:
+        # 3→4. 文字起こし + 後処理（ジェネレータチェーン: Whisper出力を逐次後処理）
+        update_status(db, job_id, "transcribing")
+        raw_gen = transcribe(audio_path, cfg, glossary, model_cache)
+        processed_gen = postprocess(raw_gen, cfg, glossary)
+        compressed_gen = compress_repetitions(processed_gen)
 
-    # 5. フォーマット出力（ここでジェネレータを消費し、リスト化・ファイル書き出し）
-    update_status(db, job_id, "formatting")
-    job_output_dir = _output_dir_for(output_root, upload_date, video_id)
-    segment_count = format_outputs(
-        segments=compressed_gen,
-        video_id=video_id,
-        url=url,
-        title=title,
-        upload_date=upload_date,
-        source_type=source_type,
-        audio_separation_enabled=audio_separation_used,
-        cfg=cfg,
-        output_dir=job_output_dir,
-    )
+        # 5. フォーマット出力（ここでジェネレータを消費し、リスト化・ファイル書き出し）
+        update_status(db, job_id, "formatting")
+        job_output_dir = _output_dir_for(output_root, upload_date, video_id)
+        segment_count = format_outputs(
+            segments=compressed_gen,
+            video_id=video_id,
+            url=url,
+            title=title,
+            upload_date=upload_date,
+            source_type=source_type,
+            audio_separation_enabled=audio_separation_used,
+            cfg=cfg,
+            output_dir=job_output_dir,
+        )
+    finally:
+        # 分離済み音声は文字起こし後は不要。失敗時も残さない（元音声はリトライ用に保持）
+        if audio_separation_used and audio_path != original_audio_path:
+            audio_path.unlink(missing_ok=True)
+
     logger.info(f"[job {job_id}] セグメント数: {segment_count}")
 
     update_status(db, job_id, "done", output_dir=str(job_output_dir))
@@ -308,7 +314,3 @@ def _run_job(
             post_errors.append(f"Notion 同期: {e}")
 
     record_post_error(db, job_id, "\n".join(post_errors) or None)
-
-    # 一時ファイル掃除（分離済み音声のみ削除、元音声は保持）
-    if audio_separation_used and audio_path != original_audio_path:
-        audio_path.unlink(missing_ok=True)
