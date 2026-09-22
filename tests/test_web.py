@@ -342,3 +342,12 @@ def test_token_query_sets_cookie(token_client):
 
 def test_token_wrong(token_client):
     assert token_client.get("/?token=wrong", follow_redirects=False).status_code == 401
+
+
+def test_glossary_put_invalid_regex_rejected(client):
+    res = client.put("/api/glossary", json={
+        "context": "",
+        "substitutions": [{"pattern": "(", "replacement": "x", "type": "regex"}],
+        "important_terms": [],
+    })
+    assert res.status_code == 422

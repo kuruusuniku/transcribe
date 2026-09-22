@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+import re
+from typing import Literal
+
+from pydantic import BaseModel, model_validator
 import yaml
 
 from ...config import AppConfig
@@ -19,7 +22,16 @@ GLOSSARY_PATH = Path(__file__).parent.parent.parent.parent.parent / "glossary.ya
 class SubstitutionEntry(BaseModel):
     pattern: str
     replacement: str
-    type: str = "literal"
+    type: Literal["literal", "regex"] = "literal"
+
+    @model_validator(mode="after")
+    def _validate_regex(self) -> "SubstitutionEntry":
+        if self.type == "regex":
+            try:
+                re.compile(self.pattern)
+            except re.error as e:
+                raise ValueError(f"正規表現が不正です: {self.pattern!r} ({e})") from e
+        return self
 
 
 class GlossaryData(BaseModel):
@@ -55,8 +67,11 @@ async def update_glossary(body: GlossaryData):
         for s in body.substitutions
     ]
     raw["important_terms"] = body.important_terms
-    GLOSSARY_PATH.write_text(
+    # 書き込み途中の中断やジョブ実行中の読み込みで壊れたファイルを掴まないよう、一時ファイル経由で置換する
+    tmp_path = GLOSSARY_PATH.with_suffix(".yaml.tmp")
+    tmp_path.write_text(
         yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
         encoding="utf-8",
     )
+    tmp_path.replace(GLOSSARY_PATH)
     return {"ok": True}

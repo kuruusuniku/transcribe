@@ -100,3 +100,14 @@ class TestCompression:
         assert "⚠️" in result[1].text
         assert "4回" in result[1].text
         assert "自動圧縮" in result[1].text
+
+
+def test_invalid_regex_rule_is_skipped():
+    from transcribe.postprocess import _compile_substitutions
+
+    rules = _compile_substitutions([
+        {"pattern": "(", "replacement": "x", "type": "regex"},
+        {"pattern": "a+", "replacement": "b", "type": "regex"},
+        {"pattern": "c", "replacement": "d"},
+    ])
+    assert len(rules) == 2

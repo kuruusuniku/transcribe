@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Generator, Iterable
 
 from .config import AppConfig, GlossaryConfig
 from .stages.transcriber import Segment
+
+logger = logging.getLogger(__name__)
 
 _NORMALIZE_RE = re.compile(r"[\s　、。，．！？!?,.・・]+")
 
@@ -27,6 +30,24 @@ class ProcessedSegment:
     original_text: str | None = field(default=None)  # 圧縮時のみ設定
 
 
+def _compile_substitutions(substitutions: list[dict]) -> list[tuple[re.Pattern | str, str]]:
+    """置換ルールを事前コンパイルする。不正な正規表現は警告してスキップ（ジョブ全体を失敗させない）。"""
+    rules: list[tuple[re.Pattern | str, str]] = []
+    for rule in substitutions:
+        pattern = rule.get("pattern", "")
+        replacement = rule.get("replacement", "")
+        if not pattern:
+            continue
+        if rule.get("type", "literal") == "regex":
+            try:
+                rules.append((re.compile(pattern), replacement))
+            except re.error as e:
+                logger.warning(f"用語辞書の正規表現が不正なためスキップ: {pattern!r} ({e})")
+        else:
+            rules.append((pattern, replacement))
+    return rules
+
+
 def postprocess(
     segments: Iterable[Segment],
     cfg: AppConfig,
@@ -34,19 +55,15 @@ def postprocess(
 ) -> Generator[ProcessedSegment, None, None]:
     """Whisper セグメントをストリームで受け取り、後処理済みセグメントを yield する。"""
     threshold = cfg.output.confidence_threshold
+    rules = _compile_substitutions(glossary.substitutions)
 
     for seg in segments:
         text = seg.text
 
         # 用語置換
-        for rule in glossary.substitutions:
-            pattern = rule.get("pattern", "")
-            replacement = rule.get("replacement", "")
-            rule_type = rule.get("type", "literal")
-            if not pattern:
-                continue
-            if rule_type == "regex":
-                text = re.sub(pattern, replacement, text)
+        for pattern, replacement in rules:
+            if isinstance(pattern, re.Pattern):
+                text = pattern.sub(replacement, text)
             else:
                 text = text.replace(pattern, replacement)
 
