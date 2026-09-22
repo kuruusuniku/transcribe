@@ -368,6 +368,7 @@ function CommandPanel({ onTaskStart, onMessage }) {
   const [dragOver, setDragOver] = useState(false);
   const [dirName, setDirName] = useState('');
   const dirHandleRef = useRef(null);
+  const pickingDirRef = useRef(false);
 
   useEffect(() => {
     loadHandleFromIDB().then(handle => {
@@ -411,6 +412,8 @@ function CommandPanel({ onTaskStart, onMessage }) {
   };
 
   const pickOutputDir = async () => {
+    if (pickingDirRef.current) return;
+    pickingDirRef.current = true;
     try {
       const handle = await window.showDirectoryPicker({
         mode: 'readwrite',
@@ -422,6 +425,8 @@ function CommandPanel({ onTaskStart, onMessage }) {
       onMessage(`[変換] 保存先: ${handle.name}`);
     } catch (e) {
       if (e.name !== 'AbortError') onMessage(`[エラー] フォルダ選択: ${e.message}`);
+    } finally {
+      pickingDirRef.current = false;
     }
   };
 
@@ -436,32 +441,35 @@ function CommandPanel({ onTaskStart, onMessage }) {
   const handleConvertQueue = async () => {
     const targets = dropFiles.filter(f => /\.m4a$/i.test(f.name));
     if (!targets.length) return;
-    if (!dirHandleRef.current) {
-      await pickOutputDir();
-      if (!dirHandleRef.current) return;
-    }
     setLoading(true);
-    for (const item of targets) {
-      setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'converting' } : f));
-      try {
-        const form = new FormData();
-        form.append('files', item.file);
-        const res = await fetch('/api/convert', { method: 'POST', body: form });
-        if (!res.ok) throw new Error(await res.text());
-        const blob = await res.blob();
-        const mp3Name = item.name.replace(/\.m4a$/i, '.mp3');
-        const fileHandle = await dirHandleRef.current.getFileHandle(mp3Name, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'done' } : f));
-        onMessage(`[完了] ${mp3Name}`);
-      } catch (e) {
-        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
-        onMessage(`[エラー] ${item.name}: ${e.message}`);
+    try {
+      if (!dirHandleRef.current) {
+        await pickOutputDir();
+        if (!dirHandleRef.current) return;
       }
+      for (const item of targets) {
+        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'converting' } : f));
+        try {
+          const form = new FormData();
+          form.append('files', item.file);
+          const res = await fetch('/api/convert', { method: 'POST', body: form });
+          if (!res.ok) throw new Error(await res.text());
+          const blob = await res.blob();
+          const mp3Name = item.name.replace(/\.m4a$/i, '.mp3');
+          const fileHandle = await dirHandleRef.current.getFileHandle(mp3Name, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'done' } : f));
+          onMessage(`[完了] ${mp3Name}`);
+        } catch (e) {
+          setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
+          onMessage(`[エラー] ${item.name}: ${e.message}`);
+        }
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleTranscribeQueue = async () => {
