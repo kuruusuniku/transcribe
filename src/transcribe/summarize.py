@@ -1,12 +1,82 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from pathlib import Path
 
 from .config import SummarizeConfig
 
 logger = logging.getLogger(__name__)
+
+
+# 同じ文字が延々と続く崩れ（表の区切り行など）を検出する
+_DEGENERATE_RUN_RE = re.compile(r"(.)\1{99,}")
+
+
+def sanitize_summary(text: str) -> tuple[str, bool]:
+    """LLM の出力の崩れを直す。(整形後テキスト, 崩れがあったか) を返す。
+
+    - 同じ文字が 100 回以上続く箇所を短く詰める（表の区切り行の暴走）
+    - 文書全体を繰り返し出力した場合は 2 回目以降を切り落とす
+    """
+    fixed = _DEGENERATE_RUN_RE.sub(lambda m: m.group(1) * 10, text)
+    repaired = fixed != text
+
+    lines = fixed.splitlines()
+    cut = _find_repeat_start(lines)
+    if cut is not None:
+        fixed = "\n".join(lines[:cut]).rstrip() + "\n"
+        repaired = True
+
+    trimmed = _drop_incomplete_table(fixed)
+    if trimmed != fixed:
+        fixed, repaired = trimmed, True
+    return fixed, repaired
+
+
+def _find_repeat_start(lines: list[str]) -> int | None:
+    """文書の先頭行または H1 見出しが再び現れる位置（＝繰り返しの開始）を返す。"""
+    anchors = []
+    first = next((ln for ln in lines if ln.strip()), None)
+    if first:
+        anchors.append(first)
+    h1 = next((ln for ln in lines if ln.startswith("# ")), None)
+    if h1 and h1 != first:
+        anchors.append(h1)
+
+    candidates = []
+    for anchor in anchors:
+        start = lines.index(anchor)
+        for k in range(start + 1, len(lines)):
+            if lines[k] == anchor:
+                candidates.append(k)
+                break
+    return min(candidates) if candidates else None
+
+
+def _drop_incomplete_table(text: str) -> str:
+    """末尾に残った中身のない表（見出し行と区切り行だけでデータ行がない）と、空になった見出しを取り除く。"""
+    lines = text.rstrip().splitlines()
+
+    table = 0
+    while table < len(lines) and lines[len(lines) - 1 - table].lstrip().startswith("|"):
+        table += 1
+    if 0 < table < 3:  # 見出し行 + 区切り行 + データ行 1 行に満たない表は捨てる
+        del lines[len(lines) - table:]
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines and lines[-1].startswith("#"):
+            lines.pop()
+            while lines and not lines[-1].strip():
+                lines.pop()
+
+    return "\n".join(lines).rstrip() + "\n" if lines else text
+
+
+def _looks_complete(text: str) -> bool:
+    """まとめとして使える体裁か（見出しが一通りそろっているか）。"""
+    return text.count("\n## ") >= 3 and "# " in text
 
 
 class SummaryTruncatedError(RuntimeError):
@@ -133,7 +203,7 @@ URL: {動画URL}
 ## 4. マイクロラーニング用チャプター分割表
 
 | チャプター番号 | 開始時間 | 終了時間 | チャプター | タイトル内容の要約 |
-| :------------- | :------- | :------- | :------------- | :--------------------------------- |
+|---|---|---|---|---|
 | 1              | HH:MM    | HH:MM    | {タイトル1}    | {要約1}                            |
 | 2              | HH:MM    | HH:MM    | {タイトル2}    | {要約2}                            |
 ```
@@ -232,7 +302,7 @@ LECTURE_SYSTEM_PROMPT = """\
 ## 7. 章立て表
 
 | チャプター番号 | 開始時間 | 終了時間 | チャプター | 内容の要約 |
-| :------------- | :------- | :------- | :------------- | :--------------------------------- |
+|---|---|---|---|---|
 | 1              | HH:MM    | HH:MM    | {タイトル1}    | {要約1}                            |
 | 2              | HH:MM    | HH:MM    | {タイトル2}    | {要約2}                            |
 ```
@@ -414,11 +484,24 @@ def generate_summary(
         else:
             raise ValueError(f"未対応の provider: {cfg.provider}")
     except SummaryTruncatedError as e:
-        # 不完全なまとめを summary.md として扱わない（Notion 同期もされない）。確認用に別名で残す。
-        truncated_path = output_dir / "summary.truncated.md"
-        truncated_path.write_text(e.partial_text, encoding="utf-8")
-        logger.error(f"{e} 途中までの出力: {truncated_path}")
-        raise
+        # 出力の崩れ（同じ文字の連続・文書全体の繰り返し）で上限に達した場合は、
+        # 崩れる前までを取り出して使う
+        recovered, repaired = sanitize_summary(e.partial_text)
+        if repaired and _looks_complete(recovered):
+            logger.warning(
+                f"まとめの出力に崩れがあったため、繰り返し部分を除いて保存します: {output_dir}"
+            )
+            summary_text = recovered
+        else:
+            # 不完全なまとめを summary.md として扱わない（Notion 同期もされない）。確認用に別名で残す。
+            truncated_path = output_dir / "summary.truncated.md"
+            truncated_path.write_text(e.partial_text, encoding="utf-8")
+            logger.error(f"{e} 途中までの出力: {truncated_path}")
+            raise
+
+    summary_text, repaired = sanitize_summary(summary_text)
+    if repaired:
+        logger.warning("まとめの出力に崩れ（繰り返し）があったため整形しました")
 
     if not summary_text.strip():
         logger.warning(f"まとめ結果が空でした: {output_dir}")

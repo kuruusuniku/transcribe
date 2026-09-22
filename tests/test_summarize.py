@@ -941,3 +941,66 @@ def test_prompts_explain_timestamp_format(sample_glossary):
             source_type=source_type,
         )
         assert "`MM:SS` の 2 つ組で書かれている場合は「分:秒」を意味する" in system
+
+
+# ─── 出力の崩れ（繰り返し）の復旧 ────────────────────────────────────────
+
+
+def _lecture_body(title="# 講義タイトル"):
+    return (
+        "講義タイトル: lecture.mp3\n\n"
+        f"{title}\n\n"
+        "## 1. 講義の全体要約\n\n要約本文\n\n"
+        "## 2. メタデータ・タグ\n\n* キーワード\n\n"
+        "## 3. 主要な概念\n\n* 概念\n"
+    )
+
+
+def test_sanitize_summary_keeps_clean_output():
+    from transcribe.summarize import sanitize_summary
+
+    text = _lecture_body()
+    assert sanitize_summary(text) == (text, False)
+
+
+def test_sanitize_summary_cuts_repeated_document():
+    from transcribe.summarize import sanitize_summary
+
+    text = _lecture_body() + "\n" + _lecture_body()
+    fixed, repaired = sanitize_summary(text)
+    assert repaired is True
+    assert fixed.count("## 1. 講義の全体要約") == 1
+
+
+def test_sanitize_summary_collapses_degenerate_run_and_drops_empty_table():
+    from transcribe.summarize import sanitize_summary
+
+    text = _lecture_body() + "\n## 4. 章立て表\n\n| 番号 | 内容 |\n| " + "-" * 400 + "\n"
+    fixed, repaired = sanitize_summary(text)
+    assert repaired is True
+    assert "-" * 100 not in fixed
+    assert "## 4. 章立て表" not in fixed  # データ行のない表は見出しごと削除
+    assert fixed.rstrip().endswith("* 概念")
+
+
+def test_truncated_but_recoverable_summary_is_saved(tmp_path):
+    """崩れで上限に達した場合、繰り返し前までを summary.md として保存する。"""
+    from unittest.mock import MagicMock, patch
+
+    from transcribe.config import SummarizeConfig
+    from transcribe.summarize import generate_summary
+
+    (tmp_path / "transcript.md").write_text("[00:00:00] テスト", encoding="utf-8")
+    cfg = SummarizeConfig(enabled=True, provider="claude", anthropic_api_key="k")
+
+    partial = _lecture_body() + "\n" + _lecture_body()[:80]
+    block = MagicMock(type="text", text=partial)
+    message = MagicMock(content=[block], stop_reason="max_tokens")
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value.messages.create.return_value = message
+        path = generate_summary(tmp_path, "https://x", "t", cfg, [], source_type="local")
+
+    assert path == tmp_path / "summary.md"
+    saved = path.read_text(encoding="utf-8")
+    assert saved.count("## 1. 講義の全体要約") == 1
+    assert not (tmp_path / "summary.truncated.md").exists()
