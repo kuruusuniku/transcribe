@@ -301,3 +301,44 @@ def test_ws_global_registers_subscriber(client):
                 break
             time.sleep(0.01)
         assert len(global_subscribers) == 1
+
+
+# ─── アクセス制御 ─────────────────────────────────────────────────────────
+
+
+def test_cross_origin_post_rejected(client):
+    res = client.post("/api/clean", headers={"Origin": "https://evil.example"})
+    assert res.status_code == 403
+
+
+def test_same_origin_post_allowed(client):
+    with patch("transcribe.web.routes.commands.start_task", return_value="t"):
+        res = client.post("/api/clean", headers={"Origin": "http://testserver"})
+    assert res.status_code == 200
+
+
+@pytest.fixture
+def token_client(client):
+    app.state.auth_token = "secret"
+    yield client
+    app.state.auth_token = None
+
+
+def test_token_required(token_client):
+    assert token_client.get("/api/jobs").status_code == 401
+
+
+def test_token_bearer(token_client):
+    res = token_client.get("/api/jobs", headers={"Authorization": "Bearer secret"})
+    assert res.status_code == 200
+
+
+def test_token_query_sets_cookie(token_client):
+    res = token_client.get("/?token=secret", follow_redirects=False)
+    assert res.status_code == 303
+    assert "transcribe_token" in res.cookies
+    assert token_client.get("/api/jobs").status_code == 200
+
+
+def test_token_wrong(token_client):
+    assert token_client.get("/?token=wrong", follow_redirects=False).status_code == 401

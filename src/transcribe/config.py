@@ -109,6 +109,10 @@ class NotionConfig:
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 8000
+    token: str = ""
+
+    def resolve_token(self) -> str:
+        return self.token or os.environ.get("TRANSCRIBE_WEB_TOKEN", "")
 
 
 @dataclass
@@ -254,6 +258,7 @@ def load_config(config_path: Path) -> AppConfig:
     web = WebConfig(
         host=web_raw.get("host", "127.0.0.1"),
         port=web_raw.get("port", 8000),
+        token=web_raw.get("token", "") or "",
     )
 
     notif_raw = raw.get("notification", {})

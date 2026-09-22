@@ -570,6 +570,7 @@ def web(
     host: str = typer.Option("", "--host", help="ホストアドレス（空の場合は config.yaml の値を使用）"),
     port: int = typer.Option(0, "--port", "-p", help="ポート番号（0 の場合は config.yaml の値を使用）"),
     reload: bool = typer.Option(False, "--reload", help="開発時のホットリロード"),
+    insecure: bool = typer.Option(False, "--insecure", help="トークン未設定での外部公開を許可する（非推奨）"),
 ) -> None:
     """Web UI サーバーを起動する（http://localhost:8000）"""
     import uvicorn
@@ -578,6 +579,18 @@ def web(
     cfg, _ = _load_cfg_and_glossary()
     actual_host = host or cfg.web.host
     actual_port = port or cfg.web.port
+
+    token = cfg.web.resolve_token()
+    is_loopback = actual_host in ("127.0.0.1", "localhost", "::1")
+    if not token and not is_loopback and not insecure:
+        console.print(
+            "[red]外部公開（host={}）にはトークンが必要です。config.yaml の web.token "
+            "または環境変数 TRANSCRIBE_WEB_TOKEN を設定してください（--insecure で強制起動）。[/red]".format(actual_host)
+        )
+        raise typer.Exit(1)
+    web_app.state.auth_token = token or None
+    if token:
+        console.print("[cyan]トークン認証が有効です。初回は /?token=<token> でアクセスしてください。[/cyan]")
 
     console.print(f"[green]transcribe Web UI を起動します: http://{actual_host}:{actual_port}[/green]")
     uvicorn.run(web_app, host=actual_host, port=actual_port, reload=reload)

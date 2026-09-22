@@ -8,12 +8,15 @@ from fastapi.staticfiles import StaticFiles
 
 from .routes import commands, files, jobs
 from .routes.glossary import router as glossary_router
+from .security import AccessControlMiddleware
 from .ws import log_stream
 
 _WEB_DIR = Path(__file__).parent
 STATIC_DIR = _WEB_DIR / "static"
 
 app = FastAPI(title="transcribe Web UI", docs_url="/api/docs")
+app.state.auth_token = None  # cli の web コマンドで設定
+app.add_middleware(AccessControlMiddleware)
 
 app.include_router(jobs.router, prefix="/api")
 app.include_router(commands.router, prefix="/api")
