@@ -78,7 +78,13 @@ def download_audio(url: str, work_dir: Path, cfg: AppConfig) -> DownloadResult:
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            # メタデータを先に取得し、リトライ等で既にダウンロード済みの音声があれば再ダウンロードしない
+            info = ydl.extract_info(url, download=False)
+            existing = work_dir / f"{info['id']}.mp3"
+            if existing.exists() and existing.stat().st_size > 0:
+                logger.info(f"ダウンロード済みの音声を再利用: {existing.name}")
+            else:
+                info = ydl.process_ie_result(info, download=True)
     except yt_dlp.utils.DownloadError as e:
         msg = str(e)
         if "cookies" in msg.lower() or "browser" in msg.lower():
