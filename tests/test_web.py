@@ -285,3 +285,19 @@ def test_ws_logs_unknown_task(client):
     with client.websocket_connect("/ws/logs/nonexistent-task-id") as ws:
         msg = ws.receive_text()
         assert msg == "[タスクが見つかりません]"
+
+
+# ─── WebSocket /ws/logs/global が task_id ルートに奪われないこと ─────────
+
+
+def test_ws_global_registers_subscriber(client):
+    from transcribe.web.runner import global_subscribers
+
+    import time
+
+    with client.websocket_connect("/ws/logs/global"):
+        for _ in range(50):
+            if global_subscribers:
+                break
+            time.sleep(0.01)
+        assert len(global_subscribers) == 1
