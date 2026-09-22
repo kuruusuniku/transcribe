@@ -17,6 +17,57 @@ function StatusBadge({ status }) {
   );
 }
 
+const STAGE_LABELS = {
+  download: 'ダウンロード',
+  separate: '音声分離',
+  transcribe: '文字起こし',
+  format: '出力',
+  summarize: 'まとめ',
+  docs_sync: 'Docs',
+  notion_sync: 'Notion',
+};
+
+const STAGE_STATUS_LABEL = {
+  done: '完了',
+  failed: '失敗',
+  running: '実行中',
+  skipped: 'スキップ',
+};
+
+function StageList({ stages }) {
+  if (!stages || stages.length === 0) {
+    return <div className="stage-list stage-empty">ステージ記録なし（この機能の導入前に処理されたジョブ）</div>;
+  }
+  const failed = stages.filter(s => s.status === 'failed' && s.error);
+  return (
+    <div className="stage-list">
+      <div className="stage-chips">
+        {stages.map(s => (
+          <span
+            key={s.stage}
+            className={`stage-chip stage-${s.status}`}
+            title={[
+              `${STAGE_LABELS[s.stage] || s.stage}: ${STAGE_STATUS_LABEL[s.status] || s.status}`,
+              `試行 ${s.attempts} 回`,
+              s.finished_at ? `終了 ${s.finished_at}` : '',
+              s.error || '',
+            ].filter(Boolean).join('\n')}
+          >
+            {STAGE_LABELS[s.stage] || s.stage}
+            <span className="stage-status">{STAGE_STATUS_LABEL[s.status] || s.status}</span>
+            {s.attempts > 1 && <span className="stage-attempts">×{s.attempts}</span>}
+          </span>
+        ))}
+      </div>
+      {failed.map(s => (
+        <div key={s.stage} className="stage-error">
+          {STAGE_LABELS[s.stage] || s.stage}: {s.error.split('\n')[0]}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function JobList({ jobs, selectedId, onSelect }) {
   if (jobs.length === 0) {
     return <div style={{ padding: '12px', color: 'var(--text-dim)', fontSize: '12px' }}>ジョブがありません</div>;
@@ -68,13 +119,26 @@ function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
   const [fileType, setFileType] = useState(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [stages, setStages] = useState(null);
 
   useEffect(() => {
     setJob(null);
+    setStages(null);
     setFileContent(null);
     setFileType(null);
     if (!jobId) return;
-    fetch(`/api/jobs/${jobId}`).then(r => r.json()).then(setJob);
+    let cancelled = false;
+    const load = () => {
+      fetch(`/api/jobs/${jobId}`).then(r => r.json()).then(j => { if (!cancelled) setJob(j); });
+      fetch(`/api/jobs/${jobId}/stages`)
+        .then(r => (r.ok ? r.json() : []))
+        .then(s => { if (!cancelled) setStages(s); })
+        .catch(() => {});
+    };
+    load();
+    // 実行中のステージ・後処理の結果を反映するため定期的に再取得する
+    const timer = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, [jobId]);
 
   const postJson = async (endpoint, body) => {
@@ -169,6 +233,7 @@ function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
           <button onClick={onClose}>✕</button>
         </div>
       </div>
+      <StageList stages={stages} />
       {fileContent !== null && (
         <div className="file-view">
           {editing ? (

@@ -253,6 +253,41 @@
 
     .detail-actions { display: flex; gap: 6px; }
 
+    .stage-list {
+      padding: 6px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+    }
+    .stage-list.stage-empty { color: var(--text-dim); font-style: italic; }
+    .stage-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .stage-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      cursor: default;
+    }
+    .stage-chip .stage-status { font-weight: 600; }
+    .stage-chip .stage-attempts { color: var(--text-dim); }
+    .stage-done { border-color: var(--done); }
+    .stage-done .stage-status { color: var(--done); }
+    .stage-failed { border-color: var(--failed); }
+    .stage-failed .stage-status { color: var(--failed); }
+    .stage-running { border-color: var(--running); }
+    .stage-running .stage-status { color: var(--running); }
+    .stage-skipped { opacity: 0.6; }
+    .stage-skipped .stage-status { color: var(--text-dim); }
+    .stage-error {
+      margin-top: 4px;
+      color: var(--failed);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .file-view {
       flex: 1;
       overflow-y: auto;
