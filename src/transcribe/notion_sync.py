@@ -254,27 +254,34 @@ _DURATION_PROPERTIES = ("動画時間", "音声時間")
 _schema_cache: dict[str, dict[str, str]] = {}
 
 
-def _get_db_schema(token: str, database_id: str) -> dict[str, str] | None:
-    """DB のプロパティ名 → 型 を返す。取得できない場合は None（そのまま送信する）。
+def _fetch_db_schema(token: str, database_id: str) -> dict[str, str] | None:
+    """Notion API から DB のプロパティ名 → 型 を取得する。
 
     notion-client の databases.retrieve は新しい API バージョンでプロパティを返さないため、
     バージョンを固定した HTTP リクエストで取得する。
     """
+    resp = httpx.get(
+        f"https://api.notion.com/v1/databases/{database_id}",
+        headers={"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28"},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    props = resp.json().get("properties")
+    if not isinstance(props, dict):
+        return None
+    return {name: p.get("type", "") for name, p in props.items()}
+
+
+def _get_db_schema(token: str, database_id: str) -> dict[str, str] | None:
+    """DB のプロパティ構成（キャッシュ付き）。取得できない場合は None（そのまま送信する）。"""
     if database_id in _schema_cache:
         return _schema_cache[database_id]
     try:
-        resp = httpx.get(
-            f"https://api.notion.com/v1/databases/{database_id}",
-            headers={"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28"},
-            timeout=20,
-        )
-        resp.raise_for_status()
-        props = resp.json().get("properties")
-        if not isinstance(props, dict):
-            return None
-        schema = {name: p.get("type", "") for name, p in props.items()}
+        schema = _fetch_db_schema(token, database_id)
     except Exception as e:
         logger.warning(f"Notion DB のプロパティ構成を取得できません（そのまま送信します）: {e}")
+        return None
+    if schema is None:
         return None
     _schema_cache[database_id] = schema
     return schema

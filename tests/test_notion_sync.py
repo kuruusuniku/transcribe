@@ -692,21 +692,16 @@ def test_sync_local_to_lecture_db_uses_schema(mock_client_cls, mock_query_db, tm
     mock_client_cls.return_value = mock_client
     mock_client.pages.create.return_value = {"id": "p1"}
 
-    schema_resp = MagicMock(status_code=200)
-    schema_resp.json.return_value = {
-        "properties": {"名前": {"type": "title"}, "日付": {"type": "date"}, "音声時間": {"type": "number"},
-                       "タグ": {"type": "multi_select"}, "まとめ進捗": {"type": "checkbox"}},
-    }
+    schema = {"名前": "title", "日付": "date", "音声時間": "number",
+              "タグ": "multi_select", "まとめ進捗": "checkbox"}
 
     d = tmp_path / "out"
     d.mkdir()
     (d / "summary.md").write_text("# まとめ\n\n### 主要キーワード\n* 中道\n", encoding="utf-8")
     (d / "meta.json").write_text(json.dumps({"title": "250430 講義.mp3", "recording_date": "不明", "duration_minutes": 55}), encoding="utf-8")
 
-    with patch("transcribe.notion_sync.httpx.get", return_value=schema_resp) as mock_get:
+    with patch("transcribe.notion_sync._get_db_schema", return_value=schema):
         assert sync_to_notion(d, "C:/audio/250430 講義.mp3", cfg, "local") is True
-    # プロパティ構成はバージョンを固定した HTTP リクエストで取得する
-    assert mock_get.call_args.kwargs["headers"]["Notion-Version"] == "2022-06-28"
     kwargs = mock_client.pages.create.call_args.kwargs
     assert kwargs["parent"] == {"database_id": "lecture-db"}
     props = kwargs["properties"]
@@ -714,3 +709,16 @@ def test_sync_local_to_lecture_db_uses_schema(mock_client_cls, mock_query_db, tm
     assert props["日付"] == {"date": {"start": "2025-04-30"}}
     assert props["音声時間"] == {"number": 55}
     _schema_cache.clear()
+
+
+def test_fetch_db_schema_uses_fixed_api_version():
+    """notion-client では取得できないため、バージョンを固定した HTTP で取得する。"""
+    from transcribe.notion_sync import _fetch_db_schema
+
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"properties": {"名前": {"type": "title"}, "音声時間": {"type": "number"}}}
+    with patch("transcribe.notion_sync.httpx.get", return_value=resp) as mock_get:
+        schema = _fetch_db_schema("token", "db-id")
+
+    assert schema == {"名前": "title", "音声時間": "number"}
+    assert mock_get.call_args.kwargs["headers"]["Notion-Version"] == "2022-06-28"
