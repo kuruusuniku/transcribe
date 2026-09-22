@@ -12,6 +12,8 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from ...config import AppConfig
+from ...pipeline import file_content_hash
+from ...state import get_job_by_content_hash
 from ..deps import get_config
 from ..runner import start_task, transcribe_cmd
 
@@ -41,9 +43,20 @@ async def run_file(audio: UploadFile = File(...), cfg: AppConfig = Depends(get_c
     with dest.open("wb") as f:
         shutil.copyfileobj(audio.file, f)
 
+    # 同じ音声を二重に処理しないよう、内容ハッシュで既存ジョブを探す
+    content_hash = file_content_hash(dest)
+    existing = get_job_by_content_hash(cfg.state_db, content_hash)
+    if existing is not None and Path(existing["url"]).exists():
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        return {
+            "task_id": None,
+            "duplicate_job_id": existing["id"],
+            "duplicate_title": existing["title"] or Path(existing["url"]).name,
+        }
+
     cmd = transcribe_cmd("file", str(dest))
     task_id = start_task(cmd)
-    return {"task_id": task_id}
+    return {"task_id": task_id, "content_hash": content_hash}
 
 
 def _unlink_many(*paths: Path) -> None:

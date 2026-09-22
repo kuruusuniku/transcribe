@@ -88,6 +88,14 @@ def _migrate_notion_synced_at(conn: sqlite3.Connection) -> None:
         logger.info("マイグレーション: notion_synced_at カラムを追加しました")
 
 
+def _migrate_content_hash(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "content_hash" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN content_hash TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_content_hash ON jobs(content_hash)")
+        logger.info("マイグレーション: content_hash カラムを追加しました")
+
+
 def _migrate_stage_progress(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(job_stages)").fetchall()}
     if "progress" not in cols:
@@ -105,6 +113,7 @@ def init_db(db_path: Path) -> None:
         _migrate_summarized_at(conn)
         _migrate_notion_synced_at(conn)
         _migrate_stage_progress(conn)
+        _migrate_content_hash(conn)
     logger.debug(f"SQLite 初期化完了: {db_path}")
 
 
@@ -152,6 +161,19 @@ def get_job_by_url_or_id(db_path: Path, url_or_id: str) -> sqlite3.Row | None:
                 "SELECT * FROM jobs WHERE video_id = ?", (url_or_id,)
             ).fetchone()
     return row
+
+
+def record_content_hash(db_path: Path, job_id: int, content_hash: str) -> None:
+    """録音ファイルの内容ハッシュを記録する（同じ音声の二重登録の判定に使う）。"""
+    with _connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET content_hash = ? WHERE id = ?", (content_hash, job_id))
+
+
+def get_job_by_content_hash(db_path: Path, content_hash: str) -> sqlite3.Row | None:
+    with _connect(db_path) as conn:
+        return conn.execute(
+            "SELECT * FROM jobs WHERE content_hash = ? ORDER BY id LIMIT 1", (content_hash,)
+        ).fetchone()
 
 
 def reset_for_rerun(db_path: Path, job_id: int) -> None:

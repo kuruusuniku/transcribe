@@ -316,15 +316,21 @@ function AddView({ health, onAdded, notify, isFirstUse, onOpenHelp }) {
         const form = new FormData();
         form.append('audio', item.file);
         try {
-          await apiFetch('/api/run/file', { method: 'POST', body: form });
-          ok += 1;
+          const res = await apiFetch('/api/run/file', { method: 'POST', body: form });
           setFiles(prev => prev.filter(f => f.id !== item.id));
+          if (res.duplicate_job_id) {
+            notify(`${item.file.name} は登録済みです（#${res.duplicate_job_id}「${res.duplicate_title}」）。重複しないよう追加しませんでした。`);
+          } else {
+            ok += 1;
+          }
         } catch (e) {
           notify(`${item.file.name}: ${e.message}`, 'error');
         }
       }
       if (ok > 0) {
         notify(`${ok} 件を追加しました。順番に自動で処理されます。`, 'success');
+        onAdded();
+      } else {
         onAdded();
       }
     } catch (e) {
@@ -963,7 +969,7 @@ function SettingsView({ health, reload, notify }) {
                 <div className="check-body">
                   <b>{c.label}</b>
                   <span className="detail">{shown.detail}</span>
-                  {!r && c.hint && <span className="hint">{c.hint}</span>}
+                  {(r?.hint || (!r && c.hint)) && <span className="hint">{r?.hint || c.hint}</span>}
                 </div>
                 {c.testable && <button onClick={() => test(c.key)} disabled={testing[c.key]}>{testing[c.key] ? '確認中…' : '接続テスト'}</button>}
               </div>

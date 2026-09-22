@@ -22,6 +22,7 @@ from .state import (
     get_pending_jobs,
     get_source_type,
     record_error,
+    record_content_hash,
     record_notion_synced,
     record_summarized,
     record_synced,
@@ -76,13 +77,18 @@ def _output_dir_for(output_root: Path, upload_date: str | None, video_id: str) -
     return output_root / f"{date_str}_{video_id}"
 
 
-def _local_video_id(src_path: Path) -> str:
-    """ローカルファイルの識別子。同名の別ファイルで出力先が衝突しないよう内容ハッシュを付与する。"""
+def file_content_hash(path: Path) -> str:
+    """ファイル内容の SHA-1。同じ音声かどうかの判定に使う。"""
     h = hashlib.sha1()
-    with src_path.open("rb") as f:
+    with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
-    return f"{src_path.stem}_{h.hexdigest()[:8]}"
+    return h.hexdigest()
+
+
+def _local_video_id(src_path: Path, content_hash: str) -> str:
+    """録音ファイルの識別子。同名の別ファイルで出力先が衝突しないよう内容ハッシュを付与する。"""
+    return f"{src_path.stem}_{content_hash[:8]}"
 
 
 def _resolve_local_file(source_path: str) -> Path:
@@ -291,7 +297,9 @@ def _run_job(
             # 録音ファイル: ダウンロード不要。元のファイルをそのまま読む
             title = Path(url).name
             audio_path = _resolve_local_file(url)
-            video_id = _local_video_id(audio_path)
+            content_hash = file_content_hash(audio_path)
+            record_content_hash(db, job_id, content_hash)
+            video_id = _local_video_id(audio_path, content_hash)
             upload_date = None
         else:
             dl_result = download_audio(url, work_dir, cfg)

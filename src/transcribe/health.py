@@ -102,7 +102,7 @@ def collect_checks(cfg: AppConfig, glossary_path: Path | None = None) -> list[Ch
         checks.append(Check("docs", "Google Docs 同期", "warn", "未認証",
                             "CLI で `uv run transcribe sync` を一度実行し、ブラウザで認証してください"))
     else:
-        checks.append(Check("docs", "Google Docs 同期", "ok", "認証済み"))
+        checks.append(Check("docs", "Google Docs 同期", "ok", "認証済み（有効かは接続テストで確認）", testable=True))
 
     # ── Notion
     n = cfg.notion
@@ -171,6 +171,19 @@ def run_connection_test(cfg: AppConfig, key: str) -> Check:
                 else:
                     resp.raise_for_status()
             return Check("notion", "Notion 同期", "error" if failed else "ok", " / ".join(results))
+        if key == "docs":
+            from google.auth.transport.requests import Request  # noqa: PLC0415
+            from google.oauth2.credentials import Credentials  # noqa: PLC0415
+
+            from .sync import SCOPES  # noqa: PLC0415
+
+            g = cfg.google_docs
+            creds = Credentials.from_authorized_user_file(str(g.token_path), SCOPES)
+            if not creds.valid:
+                # 期限切れならトークンを更新できるか試す（ブラウザは開かない）
+                creds.refresh(Request())
+                g.token_path.write_text(creds.to_json(), encoding="utf-8")
+            return Check("docs", "Google Docs 同期", "ok", "接続成功: 認証は有効です")
         if key == "summarize":
             s = cfg.summarize
             if s.provider == "gemini":
@@ -186,8 +199,14 @@ def run_connection_test(cfg: AppConfig, key: str) -> Check:
             client.models.retrieve(s.anthropic_model)
             return Check("summarize", "まとめ生成（LLM）", "ok", f"接続成功: {s.anthropic_model}")
     except Exception as e:
+        if key == "docs":
+            return Check(
+                "docs", "Google Docs 同期", "error",
+                f"認証が切れています: {type(e).__name__}: {e}",
+                "`uv run transcribe sync` をコマンドラインで実行し、ブラウザで再認証してください",
+            )
         return Check(key, _TEST_LABELS.get(key, key), "error", f"接続失敗: {type(e).__name__}: {e}")
     return Check(key, _TEST_LABELS.get(key, key), "error", "この項目は接続テストに対応していません")
 
 
-_TEST_LABELS = {"notion": "Notion 同期", "summarize": "まとめ生成（LLM）"}
+_TEST_LABELS = {"notion": "Notion 同期", "summarize": "まとめ生成（LLM）", "docs": "Google Docs 同期"}

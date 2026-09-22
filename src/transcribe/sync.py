@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -20,18 +21,52 @@ SCOPES = [
 ]
 
 
+REAUTH_MESSAGE = (
+    "Google の再認証が必要です。コマンドラインで `uv run transcribe sync` を実行し、"
+    "ブラウザで認証してください（Web UI からは認証画面を開けません）。"
+)
+
+
+class ReauthRequiredError(RuntimeError):
+    """ブラウザ認証が必要だが、対話できない環境のため実行できない。"""
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(f"{REAUTH_MESSAGE} {detail}".strip())
+
+
+def _interactive_auth_allowed() -> bool:
+    """Web サーバーのワーカー内ではブラウザ認証を開始しない。
+
+    認証フローはブラウザで操作されるまで戻らず、後続のジョブが止まってしまうため。
+    """
+    return os.environ.get("TRANSCRIBE_WEB_SERVER") != "1"
+
+
 def get_credentials(credentials_path: Path, token_path: Path) -> Credentials:
     creds = None
     if token_path.exists():
         creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                # 更新トークンが失効している場合はブラウザでの再認証が必要
+                if not _interactive_auth_allowed():
+                    raise ReauthRequiredError(f"（{type(e).__name__}: {e}）") from e
+                logger.warning(f"トークンの更新に失敗したため再認証します: {e}")
+                creds = _run_auth_flow(credentials_path)
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
-            creds = flow.run_local_server(port=0)
+            creds = _run_auth_flow(credentials_path)
         token_path.write_text(creds.to_json(), encoding="utf-8")
     return creds
+
+
+def _run_auth_flow(credentials_path: Path) -> Credentials:
+    if not _interactive_auth_allowed():
+        raise ReauthRequiredError()
+    flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
+    return flow.run_local_server(port=0)
 
 
 def get_or_create_subfolder(service, parent_id: str, name: str) -> str:

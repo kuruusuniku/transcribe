@@ -361,3 +361,43 @@ def test_pipeline_auto_sync_failure_does_not_fail_job(mock_record, mock_sync, db
 
     job = get_job_by_id(db, j1)
     assert job["status"] == "done"
+
+
+# ─── Web サーバー内ではブラウザ認証を開始しない ────────────────────────────
+
+
+@patch("transcribe.sync.InstalledAppFlow")
+@patch("transcribe.sync.Credentials")
+def test_get_credentials_refuses_browser_auth_in_web_server(mock_creds_cls, mock_flow_cls, tmp_path, monkeypatch):
+    from transcribe.sync import ReauthRequiredError
+
+    monkeypatch.setenv("TRANSCRIBE_WEB_SERVER", "1")
+    creds_path = tmp_path / "credentials.json"
+    creds_path.write_text("{}", encoding="utf-8")
+    mock_creds_cls.from_authorized_user_file.side_effect = Exception("no file")
+
+    with pytest.raises(ReauthRequiredError):
+        get_credentials(creds_path, tmp_path / "token.json")
+    mock_flow_cls.from_client_secrets_file.assert_not_called()
+
+
+@patch("transcribe.sync.Request")
+@patch("transcribe.sync.Credentials")
+def test_get_credentials_refresh_failure_in_web_server_raises_reauth(mock_creds_cls, mock_request_cls, tmp_path, monkeypatch):
+    from google.auth.exceptions import RefreshError
+
+    from transcribe.sync import ReauthRequiredError
+
+    monkeypatch.setenv("TRANSCRIBE_WEB_SERVER", "1")
+    token_path = tmp_path / "token.json"
+    token_path.write_text("{}", encoding="utf-8")
+    mock_creds = MagicMock()
+    mock_creds.valid = False
+    mock_creds.expired = True
+    mock_creds.refresh_token = "r"
+    mock_creds.refresh.side_effect = RefreshError("invalid_grant")
+    mock_creds_cls.from_authorized_user_file.return_value = mock_creds
+
+    with pytest.raises(ReauthRequiredError) as exc:
+        get_credentials(tmp_path / "credentials.json", token_path)
+    assert "transcribe sync" in str(exc.value)

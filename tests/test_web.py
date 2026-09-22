@@ -404,3 +404,32 @@ def test_add_substitution_applies_to_transcript(client, mock_config, tmp_db, tmp
     assert res.json() == {"ok": True, "replaced": 2}
     assert (out / "transcript.md").read_text(encoding="utf-8") == "臍下丹田と臍下丹田"
     assert "臍下丹田" in glossary.read_text(encoding="utf-8")
+
+
+def test_run_file_rejects_duplicate_audio(client, mock_config, tmp_db, tmp_path):
+    existing = tmp_path / "already.mp3"
+    existing.write_bytes(b"same-audio")
+    job_id = upsert_job(tmp_db, str(existing), source_type="local")
+    update_status(tmp_db, job_id, "done")
+    from transcribe.pipeline import file_content_hash
+    from transcribe.state import record_content_hash
+
+    record_content_hash(tmp_db, job_id, file_content_hash(existing))
+
+    with patch("transcribe.web.routes.files.start_task", return_value="t") as mock_st:
+        res = client.post("/api/run/file", files={"audio": ("new-name.mp3", b"same-audio", "audio/mpeg")})
+
+    body = res.json()
+    assert body["duplicate_job_id"] == job_id
+    assert body["task_id"] is None
+    mock_st.assert_not_called()
+    # 重複時はアップロードしたファイルを残さない
+    assert not any((mock_config.work_dir.parent / "uploads").glob("*/*")) if (mock_config.work_dir.parent / "uploads").exists() else True
+
+
+def test_run_file_accepts_new_audio(client):
+    with patch("transcribe.web.routes.files.start_task", return_value="t-new") as mock_st:
+        res = client.post("/api/run/file", files={"audio": ("fresh.mp3", b"unique-audio-bytes", "audio/mpeg")})
+    assert res.json()["task_id"] == "t-new"
+    cmd = mock_st.call_args.args[0]
+    assert cmd[0] == "file" and cmd[1].endswith("fresh.mp3")
