@@ -795,8 +795,12 @@ function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
                   </button>
                 )}
                 {job.status === 'done' && enabledPost.some(s => s !== 'summarize') && (
-                  <button onClick={() => run('/api/resume-post', { job_id: job.id }, '未完了の登録処理を実行します')}>
-                    Notion / Docs に登録し直す<small>失敗・未実行の後処理だけを実行します</small>
+                  <button onClick={async () => {
+                    setMenuOpen(false);
+                    if (enabledPost.includes('notion_sync')) await run('/api/sync-notion', { job_id: job.id }, 'Notion に登録し直します');
+                    if (enabledPost.includes('docs_sync')) await run('/api/sync', { job_id: job.id }, 'Google Docs に登録し直します');
+                  }}>
+                    Notion / Docs に登録し直す<small>まとめを作り直したあとに。既存ページを最新の内容で上書きします</small>
                   </button>
                 )}
                 {job.status === 'done' && (

@@ -28,6 +28,7 @@ class RunBody(BaseModel):
 
 class SyncBody(BaseModel):
     all: bool = False
+    job_id: int | None = None
 
 
 class SummarizeBody(BaseModel):
@@ -55,6 +56,8 @@ async def run_urls(body: RunBody, cfg: ConfigDep):
 @router.post("/sync")
 async def sync_jobs(body: SyncBody, cfg: ConfigDep):
     cmd = transcribe_cmd("sync") + (["--all"] if body.all else [])
+    if body.job_id is not None:
+        cmd += ["--id", str(body.job_id)]
     task_id = start_task(cmd)
     return {"task_id": task_id}
 

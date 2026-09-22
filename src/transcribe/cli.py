@@ -406,6 +406,7 @@ def rerun(
 @app.command()
 def sync(
     all_jobs: bool = typer.Option(False, "--all", help="done ジョブを全件再同期（synced_at を無視）"),
+    job_id: int | None = typer.Option(None, "--id", help="特定ジョブIDのみ同期（まとめを作り直したときなど）"),
 ) -> None:
     """未同期の完了済みジョブを Google Docs に同期する"""
     cfg, _ = _load_cfg_and_glossary()
@@ -425,7 +426,19 @@ def sync(
         )
         raise typer.Exit(0)
 
-    jobs = get_all_done_jobs(cfg.state_db) if all_jobs else get_unsynced_done_jobs(cfg.state_db)
+    if job_id is not None:
+        job = get_job_by_id(cfg.state_db, job_id)
+        if job is None:
+            console.print(f"[red]ジョブ {job_id} が見つかりません[/red]")
+            raise typer.Exit(1)
+        if job["status"] != "done":
+            console.print(f"[yellow]ジョブ {job_id} は done 状態ではありません: {job['status']}[/yellow]")
+            raise typer.Exit(0)
+        jobs = [job]
+    elif all_jobs:
+        jobs = get_all_done_jobs(cfg.state_db)
+    else:
+        jobs = get_unsynced_done_jobs(cfg.state_db)
 
     if not jobs:
         console.print("[yellow]同期対象のジョブがありません[/yellow]")
