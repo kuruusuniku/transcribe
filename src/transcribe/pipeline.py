@@ -28,6 +28,7 @@ from .state import (
     record_synced,
     finish_stage,
     reset_for_retry,
+    get_job_by_id,
     get_job_stages,
     run_stage,
     track_stage,
@@ -424,6 +425,12 @@ def run_post_stages(
 def pending_post_stages(db: Path, job_id: int, cfg: AppConfig) -> set[str]:
     """有効な後処理のうち、まだ成功していない（失敗・未実行）ステージ。"""
     done = {r["stage"] for r in get_job_stages(db, job_id) if r["status"] == "done"}
+    # ステージ記録の導入前に処理されたジョブは、従来の完了時刻カラムで判定する
+    job = get_job_by_id(db, job_id)
+    if job is not None:
+        legacy = {"summarize": "summarized_at", "docs_sync": "synced_at", "notion_sync": "notion_synced_at"}
+        stage_names = {r["stage"] for r in get_job_stages(db, job_id)}
+        done |= {s for s, col in legacy.items() if s not in stage_names and job[col]}
     return {s for s in enabled_post_stages(cfg) if s not in done}
 
 

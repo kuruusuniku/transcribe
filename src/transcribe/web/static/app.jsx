@@ -1,21 +1,28 @@
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
-const STATUS_STYLE = {
-  done:         { background: '#3fb950', color: '#000' },
-  failed:       { background: '#f85149', color: '#fff' },
-  queued:       { background: '#d29922', color: '#000' },
-  transcribing: { background: '#58a6ff', color: '#000' },
-  downloading:  { background: '#9e6a03', color: '#fff' },
-  separating:   { background: '#bc4c00', color: '#fff' },
-  formatting:   { background: '#388bfd', color: '#fff' },
+// ─── 表示用の定義 ──────────────────────────────────────────────────────────
+
+const STATUS_LABEL = {
+  queued: '待機中',
+  downloading: 'ダウンロード中',
+  separating: '音声分離中',
+  transcribing: '文字起こし中',
+  formatting: '出力中',
+  done: '完了',
+  failed: '失敗',
 };
 
-function StatusBadge({ status }) {
-  const style = STATUS_STYLE[status] || { background: '#444', color: '#fff' };
-  return (
-    <span className="status-badge" style={style}>{status}</span>
-  );
-}
+const STATUS_CLASS = {
+  queued: 'status-queued',
+  downloading: 'status-running',
+  separating: 'status-running',
+  transcribing: 'status-running',
+  formatting: 'status-running',
+  done: 'status-done',
+  failed: 'status-failed',
+};
+
+const STAGE_ORDER = ['download', 'separate', 'transcribe', 'format', 'summarize', 'docs_sync', 'notion_sync'];
 
 const STAGE_LABELS = {
   download: 'ダウンロード',
@@ -27,621 +34,377 @@ const STAGE_LABELS = {
   notion_sync: 'Notion',
 };
 
-const STAGE_STATUS_LABEL = {
-  done: '完了',
-  failed: '失敗',
-  running: '実行中',
-  skipped: 'スキップ',
-};
+const STAGE_STATUS_LABEL = { done: '完了', failed: '失敗', running: '実行中', skipped: 'スキップ' };
 
-function StageList({ stages }) {
-  if (!stages || stages.length === 0) {
-    return <div className="stage-list stage-empty">ステージ記録なし（この機能の導入前に処理されたジョブ）</div>;
-  }
-  const failed = stages.filter(s => s.status === 'failed' && s.error);
-  return (
-    <div className="stage-list">
-      <div className="stage-chips">
-        {stages.map(s => (
-          <span
-            key={s.stage}
-            className={`stage-chip stage-${s.status}`}
-            title={[
-              `${STAGE_LABELS[s.stage] || s.stage}: ${STAGE_STATUS_LABEL[s.status] || s.status}`,
-              `試行 ${s.attempts} 回`,
-              s.finished_at ? `終了 ${s.finished_at}` : '',
-              s.error || '',
-            ].filter(Boolean).join('\n')}
-          >
-            {STAGE_LABELS[s.stage] || s.stage}
-            <span className="stage-status">{STAGE_STATUS_LABEL[s.status] || s.status}</span>
-            {s.attempts > 1 && <span className="stage-attempts">×{s.attempts}</span>}
-          </span>
-        ))}
-      </div>
-      {failed.map(s => (
-        <div key={s.stage} className="stage-error">
-          {STAGE_LABELS[s.stage] || s.stage}: {s.error.split('\n')[0]}
-        </div>
-      ))}
-    </div>
-  );
-}
+const POST_STAGE_KEYS = { summarize: 'summarize', docs_sync: 'docs', notion_sync: 'notion' };
 
-function JobList({ jobs, selectedId, onSelect }) {
-  if (jobs.length === 0) {
-    return <div style={{ padding: '12px', color: 'var(--text-dim)', fontSize: '12px' }}>ジョブがありません</div>;
-  }
-  return (
-    <div className="job-list">
-      {jobs.map(job => (
-        <div
-          key={job.id}
-          className={`job-item${selectedId === job.id ? ' selected' : ''}`}
-          onClick={() => onSelect(job.id === selectedId ? null : job.id)}
-        >
-          <div className="job-item-top">
-            <span className="job-id">#{job.id}</span>
-            <StatusBadge status={job.status} />
-          </div>
-          <div className="job-title">{job.title || job.url}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
+// ─── ユーティリティ ────────────────────────────────────────────────────────
 
-function LogViewer({ logs, height = 200 }) {
-  const endRef = useRef(null);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [logs]);
-
-  if (logs.length === 0) {
-    return <div className="log-viewer" style={{ height: `${height}px`, overflowY: 'auto', flex: 'none' }}><span className="log-empty">コマンドを実行するとログがここに表示されます</span></div>;
-  }
-
-  return (
-    <div className="log-viewer" style={{ height: `${height}px`, overflowY: 'auto', flex: 'none' }}>
-      {logs.map((line, i) => {
-        const cls = line.startsWith('[完了') ? ' done' : line.startsWith('[ERROR') ? ' error' : '';
-        return <div key={i} className={`log-line${cls}`}>{line}</div>;
-      })}
-      <div ref={endRef} />
-    </div>
-  );
-}
-
-function JobDetail({ jobId, onClose, onTaskStart, onMessage, onRefresh }) {
-  const [job, setJob] = useState(null);
-  const [fileContent, setFileContent] = useState(null);
-  const [fileType, setFileType] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [stages, setStages] = useState(null);
-
-  useEffect(() => {
-    setJob(null);
-    setStages(null);
-    setFileContent(null);
-    setFileType(null);
-    if (!jobId) return;
-    let cancelled = false;
-    const load = () => {
-      fetch(`/api/jobs/${jobId}`).then(r => r.json()).then(j => { if (!cancelled) setJob(j); });
-      fetch(`/api/jobs/${jobId}/stages`)
-        .then(r => (r.ok ? r.json() : []))
-        .then(s => { if (!cancelled) setStages(s); })
-        .catch(() => {});
-    };
-    load();
-    // 実行中のステージ・後処理の結果を反映するため定期的に再取得する
-    const timer = setInterval(load, 5000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [jobId]);
-
-  const postJson = async (endpoint, body) => {
-    setLoading(true);
+async function apiFetch(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    let msg = await res.text();
     try {
-      const res = await fetch(`/api/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        onMessage(`[エラー] ${endpoint}: ${err}`);
-        return null;
-      }
-      const data = await res.json();
-      onTaskStart(data.task_id);
-      return data;
-    } catch (e) {
-      onMessage(`[エラー] ${e.message}`);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
+      const data = JSON.parse(msg);
+      if (data.detail) msg = typeof data.detail === 'string' ? data.detail : data.detail.map(d => d.msg).join(' / ');
+    } catch (_) {}
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
-  const showFile = async (type) => {
-    if (loading) return;
-    setEditing(false);
-    setLoading(true);
-    setFileType(type);
-    try {
-      const res = await fetch(`/api/jobs/${jobId}/${type}`);
-      if (res.ok) {
-        const data = await res.json();
-        setFileContent(data.content);
-      } else {
-        setFileContent(`(${type}.md が見つかりません)`);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+function postJson(path, body) {
+  return apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+}
 
-  if (!job) return null;
+function storageGet(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : JSON.parse(v);
+  } catch (_) {
+    return fallback;
+  }
+}
 
+function storageSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+}
+
+function renderMarkdown(text, { highlightReview = false } = {}) {
+  let src = text || '';
+  if (highlightReview) {
+    // 要確認（低信頼・無音疑い・繰り返し圧縮）の行をハイライトする
+    src = src.split('\n').map(line => (
+      line.startsWith('⚠️') ? `<mark class="review">${line.replace(/</g, '&lt;')}</mark>` : line
+    )).join('\n');
+  }
+  const html = marked.parse(src, { breaks: true, gfm: true });
+  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+  // 外部リンク（YouTube のタイムスタンプ等）は別タブで開く
+  return clean.replace(/<a href="http/g, '<a target="_blank" rel="noopener" href="http');
+}
+
+function isInProgress(job) {
+  return job.in_progress;
+}
+
+// ─── 共通コンポーネント ────────────────────────────────────────────────────
+
+function StatusLabel({ status }) {
+  return <span className={`status-label ${STATUS_CLASS[status] || ''}`}>{STATUS_LABEL[status] || status}</span>;
+}
+
+function ProgressBar({ value }) {
+  if (value == null) {
+    return <div className="progress-bar indeterminate"><div /></div>;
+  }
+  return <div className="progress-bar"><div style={{ width: `${Math.round(value * 100)}%` }} /></div>;
+}
+
+function Modal({ children, onClose, wide }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
-    <div className="job-detail">
-      <div className="detail-header">
-        <h3>Job #{job.id}</h3>
-        <StatusBadge status={job.status} />
-        <span className="detail-url">{job.title || job.url}</span>
-        <div className="detail-actions">
-          <button onClick={() => showFile('transcript')} disabled={loading}>transcript</button>
-          <button onClick={() => showFile('summary')} disabled={loading}>summary</button>
-          <button onClick={() => postJson('summarize', { job_id: jobId })} disabled={loading}>まとめ再生成</button>
-          {fileType === 'transcript' && !editing && (
-            <button onClick={() => setEditing(true)} disabled={loading}>編集</button>
-          )}
-          {fileType === 'transcript' && editing && (
-            <>
-              <button onClick={async () => {
-                try {
-                  const res = await fetch(`/api/jobs/${jobId}/transcript`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: fileContent }),
-                  });
-                  if (res.ok) {
-                    setEditing(false);
-                    onMessage('[完了] transcript.md を保存しました');
-                  } else {
-                    onMessage('[エラー] 保存に失敗しました');
-                  }
-                } catch {
-                  onMessage('[エラー] 保存に失敗しました');
-                }
-              }} disabled={loading}>保存</button>
-              <button onClick={() => { setEditing(false); showFile('transcript'); }} disabled={loading}>キャンセル</button>
-            </>
-          )}
-          <button onClick={async () => {
-            const ok = await postJson('rerun', { url_or_id: String(jobId) });
-            if (ok) onClose();
-          }} disabled={loading}>rerun</button>
-          <button onClick={() => postJson('retry', { job_id: jobId })} disabled={loading}>retry</button>
-          <button onClick={async () => {
-            if (!window.confirm(`ジョブ #${jobId} を削除しますか？`)) return;
-            const ok = await postJson('delete', { job_id: jobId, files: false });
-            if (ok) { onClose(); onRefresh(); }
-          }} disabled={loading}>delete</button>
-          <button onClick={onClose}>✕</button>
-        </div>
-      </div>
-      <StageList stages={stages} />
-      {fileContent !== null && (
-        <div className="file-view">
-          {editing ? (
-            <textarea
-              style={{ width: '100%', height: '100%', minHeight: '400px', fontFamily: 'monospace', fontSize: '13px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', padding: '8px', boxSizing: 'border-box', resize: 'vertical' }}
-              value={fileContent}
-              onChange={e => setFileContent(e.target.value)}
-            />
-          ) : (
-            <pre>{fileContent}</pre>
-          )}
-        </div>
-      )}
+    <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`modal${wide ? ' wide' : ''}`}>{children}</div>
     </div>
   );
 }
 
-function GlossaryEditor({ onClose }) {
-  const [data, setData] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [newSub, setNewSub] = useState({ pattern: '', replacement: '', type: 'literal' });
-  const [newTerm, setNewTerm] = useState('');
-
-  useEffect(() => {
-    fetch('/api/glossary').then(r => r.json()).then(setData);
-  }, []);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await fetch('/api/glossary', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateSub = (i, field, value) => {
-    setData(d => {
-      const subs = [...d.substitutions];
-      subs[i] = { ...subs[i], [field]: value };
-      return { ...d, substitutions: subs };
-    });
-  };
-
-  const removeSub = (i) => {
-    setData(d => ({ ...d, substitutions: d.substitutions.filter((_, idx) => idx !== i) }));
-  };
-
-  const addSub = () => {
-    if (!newSub.pattern) return;
-    setData(d => ({ ...d, substitutions: [{ ...newSub }, ...d.substitutions] }));
-    setNewSub({ pattern: '', replacement: '', type: 'literal' });
-  };
-
-  const removeTerm = (i) => {
-    setData(d => ({ ...d, important_terms: d.important_terms.filter((_, idx) => idx !== i) }));
-  };
-
-  const addTerm = () => {
-    if (!newTerm.trim()) return;
-    setData(d => ({ ...d, important_terms: [newTerm.trim(), ...d.important_terms] }));
-    setNewTerm('');
-  };
-
-  if (!data) return <div style={{ padding: '16px' }}>読み込み中...</div>;
-
-  const inputStyle = { background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', padding: '3px 6px', fontSize: '12px' };
-  const btnStyle = { fontSize: '12px', padding: '3px 8px', cursor: 'pointer' };
-
+function ConfirmModal({ title, children, confirmLabel, danger, onConfirm, onClose }) {
   return (
-    <div style={{ padding: '12px', overflowY: 'auto', flex: 1 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-        <button style={btnStyle} onClick={onClose}>用語辞書を閉じる</button>
-        <button style={{ ...btnStyle, background: 'var(--accent, #388bfd)', color: '#fff' }} onClick={save} disabled={saving}>
-          {saving ? '保存中...' : '保存'}
+    <Modal onClose={onClose}>
+      <h2>{title}</h2>
+      <div style={{ lineHeight: 1.7 }}>{children}</div>
+      <div className="modal-actions">
+        <button onClick={onClose}>キャンセル</button>
+        <button className={danger ? 'primary danger' : 'primary'} onClick={() => { onConfirm(); onClose(); }}>
+          {confirmLabel}
         </button>
       </div>
+    </Modal>
+  );
+}
 
-      <div style={{ marginBottom: '12px' }}>
-        <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>コンテキスト (initial_prompt)</label>
-        <textarea
-          style={{ ...inputStyle, width: '100%', minHeight: '60px', resize: 'vertical', boxSizing: 'border-box' }}
-          value={data.context}
-          onChange={e => setData(d => ({ ...d, context: e.target.value }))}
-        />
-      </div>
-
-      <h3 style={{ fontSize: '13px', marginBottom: '6px' }}>誤認識パターン（substitutions）</h3>
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', flexWrap: 'wrap' }}>
-        <input style={{ ...inputStyle, flex: 1 }} placeholder="パターン" value={newSub.pattern} onChange={e => setNewSub(s => ({ ...s, pattern: e.target.value }))} />
-        <input style={{ ...inputStyle, flex: 1 }} placeholder="置換後" value={newSub.replacement} onChange={e => setNewSub(s => ({ ...s, replacement: e.target.value }))} />
-        <select style={inputStyle} value={newSub.type} onChange={e => setNewSub(s => ({ ...s, type: e.target.value }))}>
-          <option value="literal">literal</option>
-          <option value="regex">regex</option>
-        </select>
-        <button style={btnStyle} onClick={addSub}>追加</button>
-      </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '16px' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--border)' }}>
-            <th style={{ textAlign: 'left', padding: '4px 6px' }}>パターン</th>
-            <th style={{ textAlign: 'left', padding: '4px 6px' }}>置換後</th>
-            <th style={{ textAlign: 'left', padding: '4px 6px' }}>種別</th>
-            <th style={{ padding: '4px 6px' }}>削除</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.substitutions.map((s, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '2px 4px' }}>
-                <input style={{ ...inputStyle, width: '100%' }} value={s.pattern} onChange={e => updateSub(i, 'pattern', e.target.value)} />
-              </td>
-              <td style={{ padding: '2px 4px' }}>
-                <input style={{ ...inputStyle, width: '100%' }} value={s.replacement} onChange={e => updateSub(i, 'replacement', e.target.value)} />
-              </td>
-              <td style={{ padding: '2px 4px' }}>
-                <select style={inputStyle} value={s.type} onChange={e => updateSub(i, 'type', e.target.value)}>
-                  <option value="literal">literal</option>
-                  <option value="regex">regex</option>
-                </select>
-              </td>
-              <td style={{ padding: '2px 4px', textAlign: 'center' }}>
-                <button style={btnStyle} onClick={() => removeSub(i)}>×</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h3 style={{ fontSize: '13px', marginBottom: '6px' }}>重要語リスト（important_terms）</h3>
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
-        <input
-          style={{ ...inputStyle, flex: 1 }}
-          placeholder="重要語を追加"
-          value={newTerm}
-          onChange={e => setNewTerm(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') addTerm(); }}
-        />
-        <button style={btnStyle} onClick={addTerm}>追加</button>
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-        {data.important_terms.map((term, i) => (
-          <span key={i} style={{ background: 'var(--border)', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            {term}
-            <button
-              onClick={() => removeTerm(i)}
-              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0', fontSize: '11px', lineHeight: 1 }}
-            >×</button>
-          </span>
-        ))}
-      </div>
+function Toasts({ toasts }) {
+  return (
+    <div className="toasts">
+      {toasts.map(t => <div key={t.id} className={`toast ${t.kind || ''}`}>{t.text}</div>)}
     </div>
   );
 }
 
-const DB_NAME = 'transcribe-ui';
-const STORE_NAME = 'handles';
+// ─── 使い方 ────────────────────────────────────────────────────────────────
 
-async function saveHandleToIDB(handle) {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(STORE_NAME);
-    req.onsuccess = e => {
-      const tx = e.target.result.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(handle, 'convertDir');
-      tx.oncomplete = resolve;
-      tx.onerror = reject;
-    };
-    req.onerror = reject;
-  });
+function HelpModal({ onClose }) {
+  return (
+    <Modal onClose={onClose} wide>
+      <h2>使い方</h2>
+      <p>YouTube の動画や録音ファイルを入れておくと、<b>文字起こし → まとめ作成 → Notion / Google Docs への登録</b>まで自動で進みます。やることは 3 つだけです。</p>
+      <div className="flow" style={{ margin: '14px 0' }}>
+        <div className="flow-step"><span className="num">1</span><b>入れる</b><p>「＋ 追加」から URL を貼るか、音声ファイル（mp3 / m4a）をドロップして「追加して開始」。</p></div>
+        <div className="flow-step"><span className="num">2</span><b>待つ</b><p>1 件ずつ順番に自動処理されます。進み具合は左の「処理中」で確認できます。</p></div>
+        <div className="flow-step"><span className="num">3</span><b>確認する</b><p>左の「要対応」に出たものだけ開いて対処します。何も出ていなければ作業は終わりです。</p></div>
+      </div>
+      <h3 style={{ fontSize: 13, marginTop: 8 }}>ことば</h3>
+      <dl>
+        <dt>まとめ</dt><dd>文字起こしをもとに AI が作る構造化された要約。Notion / Docs に登録されるのはこれです。</dd>
+        <dt>要対応</dt><dd>失敗した・まとめがないなど、あなたの操作が必要なジョブ。</dd>
+        <dt>要確認箇所</dt><dd>聞き取りの自信が低い部分。文字起こし画面で黄色く表示されます。必要なら直してください。</dd>
+        <dt>用語辞書</dt><dd>よく間違える言葉の正しい表記。文字起こしで言葉を選択するとその場で登録でき、次回から自動で直ります。</dd>
+        <dt>再開</dt><dd>失敗した段階から続きを実行します（文字起こし済みならやり直しません）。</dd>
+        <dt>最初からやり直す</dt><dd>ダウンロードから全部やり直します。設定を変えて作り直したいとき用です。</dd>
+      </dl>
+      <p style={{ marginTop: 12, color: 'var(--text-dim)' }}>設定が正しいかは右上の「設定状況」で確認できます。コマンドラインでは <code>uv run transcribe doctor</code> でも確認できます。</p>
+      <div className="modal-actions"><button className="primary" onClick={onClose}>はじめる</button></div>
+    </Modal>
+  );
 }
 
-async function loadHandleFromIDB() {
-  return new Promise((resolve) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(STORE_NAME);
-    req.onsuccess = e => {
-      const tx = e.target.result.transaction(STORE_NAME, 'readonly');
-      const get = tx.objectStore(STORE_NAME).get('convertDir');
-      get.onsuccess = () => resolve(get.result || null);
-      get.onerror = () => resolve(null);
-    };
-    req.onerror = () => resolve(null);
-  });
+// ─── ヘッダー ──────────────────────────────────────────────────────────────
+
+function QueueIndicator({ jobs, queue, onOpenJob }) {
+  const running = jobs.find(j => ['downloading', 'separating', 'transcribing', 'formatting'].includes(j.status));
+  const waiting = jobs.filter(j => j.status === 'queued').length;
+  const busy = Boolean(running) || Boolean(queue.running);
+  if (!busy && waiting === 0 && !queue.pending) {
+    return <span className="queue-indicator">待機中のジョブはありません</span>;
+  }
+  const pct = running && running.progress != null ? ` ${Math.round(running.progress * 100)}%` : '';
+  return (
+    <span className={`queue-indicator${busy ? ' busy' : ''}`} style={{ cursor: running ? 'pointer' : 'default' }}
+      onClick={() => running && onOpenJob(running.id)} title="クリックで処理中のジョブを開く">
+      {busy && <span className="spinner" />}
+      {running
+        ? <>#{running.id} {STATUS_LABEL[running.status]}{pct}</>
+        : queue.running ? <>処理中: {queue.running.split(' ')[0]}</> : '処理待ち'}
+      {(waiting > 0 || queue.pending > 0) && <> ・ 待ち {Math.max(waiting, queue.pending)} 件</>}
+    </span>
+  );
 }
 
-function CommandPanel({ onTaskStart, onMessage }) {
-  const [urls, setUrls] = useState('');
-  const [loading, setLoading] = useState(false);
-  const fileRef = useRef(null);
-  const convertRef = useRef(null);
-  const [dropFiles, setDropFiles] = useState([]);
-  const [dragOver, setDragOver] = useState(false);
-  const [dirName, setDirName] = useState('');
-  const dirHandleRef = useRef(null);
-  const pickingDirRef = useRef(false);
+// ─── サイドバー: ジョブ一覧 ────────────────────────────────────────────────
 
-  useEffect(() => {
-    loadHandleFromIDB().then(handle => {
-      if (handle) {
-        dirHandleRef.current = handle;
-        setDirName(handle.name);
-      }
-    });
-  }, []);
+function ResultIcons({ job, enabledPost }) {
+  if (job.status !== 'done') return null;
+  const items = [['summarize', 'まとめ', 'summarized_at'], ['notion_sync', 'Notion', 'notion_synced_at'], ['docs_sync', 'Docs', 'synced_at']]
+    .filter(([stage]) => enabledPost.includes(stage));
+  return (
+    <span className="result-icons">
+      {items.map(([stage, label, col]) => {
+        const st = job.stages?.[stage]?.status;
+        const ok = st === 'done' || (!st && job[col]);
+        const cls = st === 'failed' ? 'failed' : ok ? 'done' : 'none';
+        const mark = st === 'failed' ? '✗' : ok ? '✓' : '–';
+        return <span key={stage} className={`result-icon ${cls}`} title={`${label}: ${cls === 'done' ? '完了' : cls === 'failed' ? '失敗' : '未実行'}`}>{label}{mark}</span>;
+      })}
+    </span>
+  );
+}
 
-  const postJson = async (endpoint, body) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        onMessage(`[エラー] ${endpoint}: ${err}`);
-        return;
-      }
-      const data = await res.json();
-      onTaskStart(data.task_id);
-    } catch (e) {
-      onMessage(`[エラー] ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+function JobRow({ job, selected, onSelect, enabledPost }) {
+  const attention = job.attention?.length > 0;
+  return (
+    <div className={`job-row${selected ? ' selected' : ''}${attention ? ' has-attention' : ''}`} onClick={() => onSelect(job.id)}>
+      <div className="job-row-title" title={job.title || job.url}>{job.title || job.url}</div>
+      <div className="job-row-meta">
+        <StatusLabel status={job.status} />
+        <span>#{job.id}</span>
+        {job.recording_date && job.recording_date !== '不明' && <span>{job.recording_date}</span>}
+        <ResultIcons job={job} enabledPost={enabledPost} />
+        {job.low_confidence_count > 0 && (
+          <span className="review-badge" title="聞き取りの自信が低い箇所の数（文字起こし画面で黄色表示）">要確認 {job.low_confidence_count}</span>
+        )}
+      </div>
+      {job.status === 'transcribing' && <ProgressBar value={job.progress} />}
+      {['downloading', 'separating', 'formatting'].includes(job.status) && <ProgressBar value={null} />}
+      {attention && <div className="job-row-attention">⚠ {job.attention.join(' / ')}</div>}
+    </div>
+  );
+}
 
-  const handleRun = () => {
-    const urlList = urls.split('\n').map(s => s.trim()).filter(Boolean);
-    if (!urlList.length) {
-      onMessage('[エラー] URL を入力してください');
-      return;
-    }
-    postJson('run', { urls: urlList });
-    setUrls('');
-  };
+const FILTERS = [
+  { key: 'attention', label: '要対応', match: j => j.attention?.length > 0, empty: '対応が必要なジョブはありません 🎉' },
+  { key: 'progress', label: '処理中', match: j => isInProgress(j), empty: '処理中のジョブはありません。「＋ 追加」から素材を入れてください。' },
+  { key: 'done', label: '完了', match: j => j.status === 'done' && !(j.attention?.length > 0), empty: '完了したジョブはまだありません' },
+  { key: 'all', label: 'すべて', match: () => true, empty: 'ジョブはまだありません。「＋ 追加」から始めましょう。' },
+];
 
-  const pickOutputDir = async () => {
-    if (pickingDirRef.current) return;
-    pickingDirRef.current = true;
-    try {
-      const handle = await window.showDirectoryPicker({
-        mode: 'readwrite',
-        ...(dirHandleRef.current ? { startIn: dirHandleRef.current } : {}),
-      });
-      dirHandleRef.current = handle;
-      setDirName(handle.name);
-      await saveHandleToIDB(handle);
-      onMessage(`[変換] 保存先: ${handle.name}`);
-    } catch (e) {
-      if (e.name !== 'AbortError') onMessage(`[エラー] フォルダ選択: ${e.message}`);
-    } finally {
-      pickingDirRef.current = false;
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files).filter(f => /\.(mp3|m4a)$/i.test(f.name));
-    if (!files.length) return;
-    setDropFiles(files.map((f, i) => ({ id: i, file: f, status: 'pending', name: f.name })));
-  };
-
-  const handleConvertQueue = async () => {
-    const targets = dropFiles.filter(f => /\.m4a$/i.test(f.name));
-    if (!targets.length) return;
-    setLoading(true);
-    try {
-      if (!dirHandleRef.current) {
-        await pickOutputDir();
-        if (!dirHandleRef.current) return;
-      }
-      for (const item of targets) {
-        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'converting' } : f));
-        try {
-          const form = new FormData();
-          form.append('files', item.file);
-          const res = await fetch('/api/convert', { method: 'POST', body: form });
-          if (!res.ok) throw new Error(await res.text());
-          const blob = await res.blob();
-          const mp3Name = item.name.replace(/\.m4a$/i, '.mp3');
-          const fileHandle = await dirHandleRef.current.getFileHandle(mp3Name, { create: true });
-          const writable = await fileHandle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'done' } : f));
-          onMessage(`[完了] ${mp3Name}`);
-        } catch (e) {
-          setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
-          onMessage(`[エラー] ${item.name}: ${e.message}`);
-        }
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTranscribeQueue = async () => {
-    if (!dropFiles.length) return;
-    setLoading(true);
-    for (const item of dropFiles) {
-      setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'converting' } : f));
-      try {
-        const form = new FormData();
-        form.append('audio', item.file);
-        const res = await fetch('/api/run/file', { method: 'POST', body: form });
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        onTaskStart(data.task_id);
-        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'done' } : f));
-      } catch (e) {
-        setDropFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
-        onMessage(`[エラー] ${item.name}: ${e.message}`);
-      }
-    }
-    setLoading(false);
-  };
-
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setLoading(true);
-    const form = new FormData();
-    form.append('audio', file);
-    try {
-      const res = await fetch('/api/run/file', { method: 'POST', body: form });
-      if (!res.ok) {
-        const err = await res.text();
-        onMessage(`[エラー] ファイルアップロード: ${err}`);
-        return;
-      }
-      const data = await res.json();
-      onTaskStart(data.task_id);
-    } catch (e) {
-      onMessage(`[エラー] ${e.message}`);
-    } finally {
-      setLoading(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
+function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, enabledPost }) {
+  const [query, setQuery] = useState('');
+  const active = FILTERS.find(f => f.key === filter) || FILTERS[3];
+  const q = query.trim().toLowerCase();
+  const visible = jobs
+    .filter(active.match)
+    .filter(j => !q || (j.title || '').toLowerCase().includes(q) || (j.url || '').toLowerCase().includes(q));
 
   return (
-    <div className="command-panel">
-      <div className="url-row">
-        <textarea
-          className="url-input"
-          placeholder="URL を入力（複数行可）"
-          value={urls}
-          onChange={e => setUrls(e.target.value)}
-          rows={2}
-          onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleRun(); }}
-        />
-        <button className="primary" onClick={handleRun} disabled={loading}>実行</button>
+    <aside className="sidebar">
+      <div className="sidebar-top">
+        <div className="filter-tabs">
+          {FILTERS.map(f => {
+            const count = jobs.filter(f.match).length;
+            return (
+              <button key={f.key} className={`filter-tab ${f.key}${filter === f.key ? ' active' : ''}`} onClick={() => setFilter(f.key)}>
+                {f.label}{f.key !== 'all' && count > 0 && <span className="count">{count}</span>}
+              </button>
+            );
+          })}
+        </div>
+        <input type="search" placeholder="タイトル・URL で検索" value={query} onChange={e => setQuery(e.target.value)} />
       </div>
-      <div className="action-row">
-        <label className="file-btn">
-          ファイルを選択
-          <input ref={fileRef} type="file" accept=".mp3,.m4a" onChange={handleFileUpload} style={{ display: 'none' }} />
-        </label>
-        <button onClick={() => postJson('sync', { all: false })} disabled={loading}>未同期を同期</button>
-        <button onClick={() => postJson('sync', { all: true })} disabled={loading}>全件同期</button>
-        <button onClick={() => postJson('summarize', { all: false })} disabled={loading}>未まとめをまとめ</button>
-        <button onClick={() => postJson('summarize', { all: true })} disabled={loading}>全件まとめ</button>
-        <button onClick={() => postJson('sync-notion', { all: false })} disabled={loading}>未Notion同期</button>
-        <button onClick={() => postJson('sync-notion', { all: true })} disabled={loading}>全件Notion同期</button>
-        <button onClick={() => postJson('clean', {})} disabled={loading}>一時ファイル削除</button>
+      <div className="job-list">
+        {visible.length === 0
+          ? <div className="list-empty">{q ? '該当するジョブはありません' : active.empty}</div>
+          : visible.map(job => (
+            <JobRow key={job.id} job={job} selected={selectedId === job.id} onSelect={onSelect} enabledPost={enabledPost} />
+          ))}
       </div>
-      <div
-        className={`drop-zone${dragOver ? ' drag-over' : ''}`}
-        onDrop={handleDrop}
-        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-      >
-        {dropFiles.length === 0 ? (
-          <span className="drop-hint">.mp3 / .m4a をここにドロップ</span>
-        ) : (
-          <div className="drop-queue">
-            <ul className="drop-file-list">
-              {dropFiles.map(f => (
-                <li key={f.id} className={`drop-file-item status-${f.status}`}>
-                  <span className="drop-status-icon">
-                    {f.status === 'pending' && '○'}
-                    {f.status === 'converting' && '⏳'}
-                    {f.status === 'done' && '✓'}
-                    {f.status === 'error' && '✗'}
-                  </span>
-                  <span className="drop-file-name">{f.name}</span>
+    </aside>
+  );
+}
+
+// ─── 追加画面 ──────────────────────────────────────────────────────────────
+
+function AddView({ health, onAdded, notify, isFirstUse, onOpenHelp }) {
+  const [urls, setUrls] = useState('');
+  const [files, setFiles] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const fileRef = useRef(null);
+
+  const addFiles = (list) => {
+    const accepted = Array.from(list).filter(f => /\.(mp3|m4a)$/i.test(f.name));
+    const rejected = list.length - accepted.length;
+    if (rejected > 0) notify(`${rejected} 件は対応していない形式のため除外しました（mp3 / m4a のみ）`, 'error');
+    setFiles(prev => [...prev, ...accepted.map(f => ({ id: `${f.name}-${f.size}-${Math.random()}`, file: f }))]);
+  };
+
+  const urlList = urls.split('\n').map(s => s.trim()).filter(Boolean);
+  const total = urlList.length + files.length;
+
+  const submit = async () => {
+    if (total === 0 || submitting) return;
+    setSubmitting(true);
+    let ok = 0;
+    try {
+      if (urlList.length) {
+        await postJson('/api/run', { urls: urlList });
+        ok += urlList.length;
+        setUrls('');
+      }
+      for (const item of files) {
+        const form = new FormData();
+        form.append('audio', item.file);
+        try {
+          await apiFetch('/api/run/file', { method: 'POST', body: form });
+          ok += 1;
+          setFiles(prev => prev.filter(f => f.id !== item.id));
+        } catch (e) {
+          notify(`${item.file.name}: ${e.message}`, 'error');
+        }
+      }
+      if (ok > 0) {
+        notify(`${ok} 件を追加しました。順番に自動で処理されます。`, 'success');
+        onAdded();
+      }
+    } catch (e) {
+      notify(`追加できませんでした: ${e.message}`, 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const status = key => health.find(c => c.key === key)?.status;
+  const integrations = [
+    ['まとめ作成', 'summarize'],
+    ['Notion 登録', 'notion'],
+    ['Google Docs 登録', 'docs'],
+    ['完了メール', 'notification'],
+  ];
+
+  return (
+    <div className="view">
+      <div className="view-narrow">
+        <h2>素材を追加</h2>
+        <p className="lead">YouTube の URL を貼るか、録音ファイルをドロップして「追加して開始」を押すだけです。あとは自動で進みます。</p>
+
+        <div className="card add-card section">
+          <textarea
+            placeholder={'YouTube の URL（1 行に 1 件、複数可）\nhttps://www.youtube.com/watch?v=...'}
+            value={urls}
+            onChange={e => setUrls(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); }}
+          />
+          <div
+            className={`drop-area${dragOver ? ' drag-over' : ''}`}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+          >
+            録音ファイル（mp3 / m4a）をここにドロップ、または
+            <label className="file-btn">
+              ファイルを選択
+              <input ref={fileRef} type="file" accept=".mp3,.m4a" multiple style={{ display: 'none' }}
+                onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+            </label>
+          </div>
+          {files.length > 0 && (
+            <ul className="pending-files">
+              {files.map(f => (
+                <li key={f.id}>
+                  🎵 <span>{f.file.name}</span>
+                  <small style={{ color: 'var(--text-dim)' }}>{(f.file.size / 1024 / 1024).toFixed(1)} MB</small>
+                  <button className="ghost" onClick={() => setFiles(prev => prev.filter(x => x.id !== f.id))} title="取り消す">✕</button>
                 </li>
               ))}
             </ul>
-            <div className="drop-actions">
-              {dropFiles.some(f => /\.m4a$/i.test(f.name)) && (
-                <button onClick={handleConvertQueue} disabled={loading}>
-                  m4a→mp3変換{dirName && ` → ${dirName}`}
-                </button>
-              )}
-              <button onClick={handleTranscribeQueue} disabled={loading}>文字起こし</button>
-              <button onClick={pickOutputDir} disabled={loading} className="secondary">
-                {dirName ? `📁 ${dirName}` : '📁 保存先を選択'}
-              </button>
-              <button onClick={() => setDropFiles([])} disabled={loading} className="secondary">クリア</button>
+          )}
+          <div className="add-actions">
+            <button className="primary large" onClick={submit} disabled={total === 0 || submitting}>
+              {submitting ? '追加中…' : total > 0 ? `追加して開始（${total} 件）` : '追加して開始'}
+            </button>
+            <span className="hint">Ctrl + Enter でも追加できます。同じ動画を再度追加しても二重には処理されません。</span>
+          </div>
+        </div>
+
+        <div className="section">
+          <h3>追加したあとの流れ</h3>
+          <div className="flow">
+            <div className="flow-step">
+              <span className="num">1</span><b>自動で処理</b>
+              <p>ダウンロード → 文字起こし → 以下の有効な処理。1 件ずつ順番に進みます。</p>
+              <div className="chips">
+                {integrations.map(([label, key]) => (
+                  <span key={key} className={`chip${['ok', 'warn'].includes(status(key)) ? ' on' : ''}`}
+                    title={['ok', 'warn'].includes(status(key)) ? '有効' : '無効または未設定（設定状況を確認）'}>
+                    {['ok', 'warn'].includes(status(key)) ? '✓' : '–'} {label}
+                  </span>
+                ))}
+              </div>
             </div>
+            <div className="flow-step">
+              <span className="num">2</span><b>進み具合を見る</b>
+              <p>左の「処理中」タブと右上の表示で確認できます。画面を閉じても処理は続きます。</p>
+            </div>
+            <div className="flow-step">
+              <span className="num">3</span><b>要対応だけ確認</b>
+              <p>失敗やまとめ漏れがあると左の「要対応」に出ます。誤認識は文字起こし画面で直せます。</p>
+            </div>
+          </div>
+        </div>
+
+        {isFirstUse && (
+          <div className="banner info">
+            <div className="banner-body">はじめて使う場合は、まず「使い方」と「設定状況」を確認してください。</div>
+            <button onClick={onOpenHelp}>使い方を見る</button>
           </div>
         )}
       </div>
@@ -649,179 +412,932 @@ function CommandPanel({ onTaskStart, onMessage }) {
   );
 }
 
-function App() {
-  const [jobs, setJobs] = useState([]);
-  const [selectedJobId, setSelectedJobId] = useState(null);
-  const [logs, setLogs] = useState([]);
-  const [activeCount, setActiveCount] = useState(0);
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showGlossary, setShowGlossary] = useState(false);
-  const [logHeight, setLogHeight] = useState(200);
-  const [darkMode, setDarkMode] = useState(true);
-  const wsRef = useRef(null);
+// ─── ジョブ詳細 ────────────────────────────────────────────────────────────
+
+function StageTrack({ stages, job }) {
+  const byStage = Object.fromEntries((stages || []).map(s => [s.stage, s]));
+  const shown = STAGE_ORDER.filter(s => byStage[s] && !(s === 'separate' && byStage[s].status === 'skipped' && !byStage.transcribe));
+  if (shown.length === 0) {
+    return <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>処理の記録はありません（この機能の導入前に処理されたジョブです）</span>;
+  }
+  return (
+    <div className="stage-track">
+      {shown.map((s, i) => {
+        const st = byStage[s];
+        const pct = st.status === 'running' && st.progress != null ? ` ${Math.round(st.progress * 100)}%` : '';
+        return (
+          <React.Fragment key={s}>
+            {i > 0 && <span className="stage-sep">›</span>}
+            <span className={`stage-step ${st.status}`}
+              title={[`試行 ${st.attempts} 回`, st.finished_at ? `終了 ${st.finished_at}` : '', st.error || ''].filter(Boolean).join('\n')}>
+              {st.status === 'running' && <span className="spinner" />}
+              {STAGE_LABELS[s]}{st.status === 'done' ? ' ✓' : st.status === 'failed' ? ' ✗' : st.status === 'skipped' ? ' –' : ''}{pct}
+              {st.attempts > 1 && <small>×{st.attempts}</small>}
+            </span>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function AddToGlossaryModal({ text, jobId, onClose, onSaved, notify }) {
+  const [pattern, setPattern] = useState(text);
+  const [replacement, setReplacement] = useState('');
+  const [apply, setApply] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!pattern || !replacement) return;
+    setSaving(true);
+    try {
+      const res = await postJson('/api/glossary/substitutions', {
+        pattern, replacement, type: 'literal', apply_to_job_id: apply ? jobId : null,
+      });
+      notify(apply
+        ? `用語辞書に登録し、この文字起こしの ${res.replaced} か所を修正しました。まとめに反映するには「まとめを作り直す」を実行してください。`
+        : '用語辞書に登録しました。次回の文字起こしから自動で修正されます。', 'success');
+      onSaved();
+      onClose();
+    } catch (e) {
+      notify(`登録できませんでした: ${e.message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <h2>誤認識を用語辞書に登録</h2>
+      <p style={{ color: 'var(--text-dim)' }}>登録した言葉は、次回からの文字起こしで自動的に正しい表記に置き換わります。</p>
+      <div className="field">
+        <label>誤って認識された言葉</label>
+        <input type="text" value={pattern} onChange={e => setPattern(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>正しい表記</label>
+        <input type="text" value={replacement} autoFocus onChange={e => setReplacement(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); }} placeholder="例: 臍下丹田" />
+      </div>
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12 }}>
+        <input type="checkbox" checked={apply} onChange={e => setApply(e.target.checked)} />
+        この文字起こしにもすぐ反映する
+      </label>
+      <div className="modal-actions">
+        <button onClick={onClose}>キャンセル</button>
+        <button className="primary" onClick={save} disabled={!pattern || !replacement || saving}>{saving ? '登録中…' : '登録'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function TranscriptTab({ jobId, version, notify }) {
+  const [content, setContent] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [selection, setSelection] = useState(null);
+  const [glossaryText, setGlossaryText] = useState(null);
+  const bodyRef = useRef(null);
+
+  const load = useCallback(() => {
+    apiFetch(`/api/jobs/${jobId}/transcript`).then(d => setContent(d.content)).catch(() => setContent(''));
+  }, [jobId]);
+
+  useEffect(() => { setEditing(false); setContent(null); load(); }, [load, version]);
+
+  const onMouseUp = () => {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString().trim() : '';
+    if (!text || text.length > 40 || text.includes('\n') || !bodyRef.current) { setSelection(null); return; }
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    const scroller = bodyRef.current.closest('.tab-body');
+    const base = scroller.getBoundingClientRect();
+    setSelection({ text, top: rect.bottom - base.top + scroller.scrollTop + 6, left: rect.left - base.left + scroller.scrollLeft });
+  };
+
+  const save = async () => {
+    try {
+      await apiFetch(`/api/jobs/${jobId}/transcript`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: draft }),
+      });
+      setContent(draft);
+      setEditing(false);
+      notify('文字起こしを保存しました。まとめに反映するには「まとめを作り直す」を実行してください。', 'success');
+    } catch (e) {
+      notify(`保存できませんでした: ${e.message}`, 'error');
+    }
+  };
+
+  const html = useMemo(() => renderMarkdown(content, { highlightReview: true }), [content]);
+
+  if (content === null) return <div className="empty-state">読み込み中…</div>;
+  if (!content) return <div className="empty-state">文字起こしはまだありません。</div>;
+
+  return (
+    <>
+      <div className="tab-toolbar">
+        {editing ? (
+          <>
+            <button className="primary" onClick={save}>保存</button>
+            <button onClick={() => setEditing(false)}>キャンセル</button>
+            <span className="hint">Markdown をそのまま編集できます。</span>
+          </>
+        ) : (
+          <>
+            <button onClick={() => { setDraft(content); setEditing(true); setSelection(null); }}>直接編集</button>
+            <span className="hint">誤認識した言葉を<b>マウスで選択</b>すると、用語辞書に登録してまとめて直せます。<mark className="review" style={{ background: 'var(--warn-soft)', color: 'inherit' }}>黄色</mark>は要確認箇所です。</span>
+          </>
+        )}
+      </div>
+      {editing
+        ? <textarea className="edit-area" value={draft} onChange={e => setDraft(e.target.value)} />
+        : <div ref={bodyRef} className="markdown" onMouseUp={onMouseUp} dangerouslySetInnerHTML={{ __html: html }} />}
+      {selection && !editing && (
+        <button className="selection-pop" style={{ top: selection.top, left: selection.left }}
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => { setGlossaryText(selection.text); setSelection(null); }}>
+          「{selection.text}」を用語辞書に登録
+        </button>
+      )}
+      {glossaryText !== null && (
+        <AddToGlossaryModal text={glossaryText} jobId={jobId} notify={notify}
+          onClose={() => setGlossaryText(null)} onSaved={load} />
+      )}
+    </>
+  );
+}
+
+function SummaryTab({ jobId, version, job, summarizeEnabled, onSummarize }) {
+  const [content, setContent] = useState(null);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark');
-  }, []);
+    setContent(null);
+    if (!job?.has_summary) { setContent(''); return; }
+    apiFetch(`/api/jobs/${jobId}/summary`).then(d => setContent(d.content)).catch(() => setContent(''));
+  }, [jobId, version, job?.has_summary]);
+
+  const html = useMemo(() => renderMarkdown(content), [content]);
+
+  if (content === null) return <div className="empty-state">読み込み中…</div>;
+  if (!content) {
+    if (job?.status !== 'done') return <div className="empty-state">文字起こしが終わると、自動でまとめが作成されます。</div>;
+    return (
+      <div className="empty-state">
+        まとめはまだありません。<br />
+        {summarizeEnabled
+          ? <button className="primary" style={{ marginTop: 8 }} onClick={onSummarize}>まとめを作成</button>
+          : <>まとめ生成が無効か未設定です。右上の「設定状況」を確認してください。</>}
+      </div>
+    );
+  }
+  return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function HistoryTab({ job, stages }) {
+  return (
+    <div>
+      <div className="section">
+        <h3>処理の記録</h3>
+        {(stages || []).length === 0
+          ? <p className="empty-state" style={{ padding: 0 }}>記録はありません（この機能の導入前に処理されたジョブです）。</p>
+          : (
+            <table className="history-table">
+              <thead><tr><th>段階</th><th>状態</th><th>試行</th><th>開始</th><th>終了</th><th>エラー</th></tr></thead>
+              <tbody>
+                {STAGE_ORDER.filter(s => stages.some(x => x.stage === s)).map(s => {
+                  const st = stages.find(x => x.stage === s);
+                  return (
+                    <tr key={s}>
+                      <td>{STAGE_LABELS[s]}</td>
+                      <td>{STAGE_STATUS_LABEL[st.status] || st.status}{st.status === 'running' && st.progress != null ? ` ${Math.round(st.progress * 100)}%` : ''}</td>
+                      <td>{st.attempts}</td>
+                      <td>{st.started_at || ''}</td>
+                      <td>{st.finished_at || ''}</td>
+                      <td className="err">{st.error || ''}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+      </div>
+      <div className="section">
+        <h3>ジョブ情報</h3>
+        <table className="history-table">
+          <tbody>
+            <tr><th>ID</th><td>{job.id}</td></tr>
+            <tr><th>ソース</th><td style={{ wordBreak: 'break-all' }}>{job.url}</td></tr>
+            <tr><th>追加日時</th><td>{job.created_at}</td></tr>
+            <tr><th>最終更新</th><td>{job.updated_at}</td></tr>
+            <tr><th>出力フォルダ</th><td style={{ wordBreak: 'break-all' }}>{job.output_dir || '-'}</td></tr>
+            <tr><th>リトライ回数</th><td>{job.retry_count}</td></tr>
+          </tbody>
+        </table>
+        {job.error_message && (
+          <>
+            <h3 style={{ marginTop: 12 }}>エラー詳細</h3>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11.5, color: 'var(--failed)', background: 'var(--surface)', padding: 10, borderRadius: 6 }}>{job.error_message}</pre>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
+  const [job, setJob] = useState(null);
+  const [stages, setStages] = useState([]);
+  const [tab, setTab] = useState(() => storageGet('transcribe.detailTab', 'summary'));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirm, setConfirm] = useState(null);
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const version = listJob?.updated_at;
+
+  useEffect(() => { storageSet('transcribe.detailTab', tab); }, [tab]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/api/jobs/${jobId}`).then(j => { if (!cancelled) setJob(j); }).catch(() => {});
+    apiFetch(`/api/jobs/${jobId}/stages`).then(s => { if (!cancelled) setStages(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [jobId, version, listJob?.progress]);
+
+  useEffect(() => { setMenuOpen(false); }, [jobId]);
+
+  if (!job || !listJob) return <div className="view"><div className="empty-state">読み込み中…</div></div>;
+
+  const run = async (path, body, message) => {
+    setMenuOpen(false);
+    try {
+      await postJson(path, body);
+      notify(message, 'success');
+      onChanged();
+    } catch (e) {
+      notify(`実行できませんでした: ${e.message}`, 'error');
+    }
+  };
+
+  const attention = listJob.attention || [];
+  const failedPost = attention.length > 0 && job.status === 'done';
+  const inProgress = listJob.in_progress;
+  const summarizeEnabled = enabledPost.includes('summarize');
+  const isYoutube = /^https?:\/\//.test(job.url);
+
+  let primary = null;
+  if (job.status === 'failed') {
+    primary = <button className="primary" onClick={() => run('/api/retry', { job_id: job.id }, '失敗したところから再開します')}>失敗したところから再開</button>;
+  } else if (failedPost) {
+    primary = <button className="primary" onClick={() => run('/api/resume-post', { job_id: job.id }, '後処理をやり直します')}>後処理をやり直す</button>;
+  }
+
+  const coreError = job.error_message ? job.error_message.split('\n')[0] : '';
+
+  return (
+    <div className="detail">
+      <div className="detail-head">
+        <div className="detail-title-row">
+          <StatusLabel status={job.status} />
+          <div className="detail-title" title={job.title || job.url}>{job.title || job.url}</div>
+          <div className="detail-actions">
+            {primary}
+            <button onClick={() => setMenuOpen(o => !o)} disabled={inProgress} title={inProgress ? '処理中は操作できません' : 'その他の操作'}>その他 ▾</button>
+            {menuOpen && (
+              <div className="menu" onMouseLeave={() => setMenuOpen(false)}>
+                {job.status === 'done' && summarizeEnabled && (
+                  <button onClick={() => { setMenuOpen(false); setConfirm('summarize'); }}>
+                    まとめを作り直す<small>文字起こしを直したあとに。AI の API を再度呼び出します</small>
+                  </button>
+                )}
+                {job.status === 'done' && enabledPost.some(s => s !== 'summarize') && (
+                  <button onClick={() => run('/api/resume-post', { job_id: job.id }, '未完了の登録処理を実行します')}>
+                    Notion / Docs に登録し直す<small>失敗・未実行の後処理だけを実行します</small>
+                  </button>
+                )}
+                <button onClick={() => { setMenuOpen(false); setConfirm('rerun'); }}>
+                  最初からやり直す<small>ダウンロードから全部やり直します（既存の出力はバックアップ）</small>
+                </button>
+                <hr />
+                <button className="danger" onClick={() => { setMenuOpen(false); setConfirm('delete'); }}>
+                  削除<small>一覧から削除します</small>
+                </button>
+              </div>
+            )}
+          </div>
+          <button className="ghost" onClick={onClosed} title="閉じる">✕</button>
+        </div>
+        <div className="detail-sub">
+          <span>#{job.id}</span>
+          {listJob.recording_date && listJob.recording_date !== '不明' && <span>録画日 {listJob.recording_date}</span>}
+          {isYoutube && <a href={job.url} target="_blank" rel="noopener">▶ 元の動画</a>}
+          {job.notion_url && <a href={job.notion_url} target="_blank" rel="noopener">Notion で開く</a>}
+          {listJob.low_confidence_count > 0 && <span className="review-badge">要確認 {listJob.low_confidence_count} 箇所</span>}
+        </div>
+        <StageTrack stages={stages} job={job} />
+        {job.status === 'failed' && (
+          <div className="banner error">
+            <div className="banner-body"><b>処理に失敗しました。</b> {coreError}<br />
+              <small>一時的な通信エラーなら「再開」で直ります。繰り返し失敗する場合は「処理の記録」タブでエラー詳細を確認してください。</small></div>
+          </div>
+        )}
+        {failedPost && (
+          <div className="banner error">
+            <div className="banner-body">
+              <b>文字起こしは完了していますが、対応が必要です。</b>
+              <ul>{attention.map(a => <li key={a}>{a}</li>)}</ul>
+            </div>
+          </div>
+        )}
+        {inProgress && (
+          <div className="banner info">
+            <div className="banner-body">
+              {STATUS_LABEL[job.status]}{listJob.progress != null && job.status === 'transcribing' ? `（${Math.round(listJob.progress * 100)}%）` : ''}。完了まで自動で進みます。
+              <div style={{ marginTop: 6 }}><ProgressBar value={job.status === 'transcribing' ? listJob.progress : null} /></div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="tabs">
+        <button className={`tab${tab === 'summary' ? ' active' : ''}`} onClick={() => setTab('summary')}>まとめ</button>
+        <button className={`tab${tab === 'transcript' ? ' active' : ''}`} onClick={() => setTab('transcript')}>文字起こし</button>
+        <button className={`tab${tab === 'history' ? ' active' : ''}`} onClick={() => setTab('history')}>処理の記録</button>
+      </div>
+      <div className="tab-body">
+        {tab === 'summary' && (
+          <SummaryTab jobId={job.id} version={version} job={job} summarizeEnabled={summarizeEnabled}
+            onSummarize={() => run('/api/summarize', { job_id: job.id }, 'まとめを作成します')} />
+        )}
+        {tab === 'transcript' && (job.has_transcript
+          ? <TranscriptTab jobId={job.id} version={version} notify={notify} />
+          : <div className="empty-state">文字起こしが終わるとここに表示されます。</div>)}
+        {tab === 'history' && <HistoryTab job={job} stages={stages} />}
+      </div>
+
+      {confirm === 'summarize' && (
+        <ConfirmModal title="まとめを作り直しますか？" confirmLabel="作り直す" onClose={() => setConfirm(null)}
+          onConfirm={() => run('/api/summarize', { job_id: job.id }, 'まとめを作り直します')}>
+          現在の文字起こしから、まとめを作り直します。AI の API を呼び出すため、利用料金が発生します。<br />
+          完了後、Notion / Docs にも登録し直す場合は「Notion / Docs に登録し直す」を実行してください。
+        </ConfirmModal>
+      )}
+      {confirm === 'rerun' && (
+        <ConfirmModal title="最初からやり直しますか？" confirmLabel="やり直す" onClose={() => setConfirm(null)}
+          onConfirm={() => run('/api/rerun', { url_or_id: String(job.id) }, '最初からやり直します')}>
+          ダウンロード・文字起こしからすべてやり直します。長い動画では時間がかかります。<br />
+          今の出力フォルダはバックアップとして残ります。手で直した文字起こしは新しい結果に置き換わります。
+        </ConfirmModal>
+      )}
+      {confirm === 'delete' && (
+        <ConfirmModal title={`ジョブ #${job.id} を削除しますか？`} confirmLabel="削除" danger onClose={() => setConfirm(null)}
+          onConfirm={async () => { await run('/api/delete', { job_id: job.id, files: deleteFiles }, '削除しました'); onClosed(); }}>
+          一覧から削除します。Notion / Docs に登録済みのページは削除されません。
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 10 }}>
+            <input type="checkbox" checked={deleteFiles} onChange={e => setDeleteFiles(e.target.checked)} />
+            文字起こし・まとめのファイルも削除する
+          </label>
+        </ConfirmModal>
+      )}
+    </div>
+  );
+}
+
+// ─── 用語辞書 ──────────────────────────────────────────────────────────────
+
+function GlossaryView({ notify }) {
+  const [data, setData] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [query, setQuery] = useState('');
+  const [newSub, setNewSub] = useState({ pattern: '', replacement: '', type: 'literal' });
+  const [newTerm, setNewTerm] = useState('');
+
+  useEffect(() => { apiFetch('/api/glossary').then(setData).catch(e => notify(`用語辞書を読み込めません: ${e.message}`, 'error')); }, []);
+
+  const change = (fn) => { setData(fn); setDirty(true); };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiFetch('/api/glossary', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      setDirty(false);
+      notify('用語辞書を保存しました。次回の文字起こしから反映されます。', 'success');
+    } catch (e) {
+      notify(`保存できませんでした: ${e.message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!data) return <div className="view"><div className="empty-state">読み込み中…</div></div>;
+
+  const q = query.trim();
+  const subs = data.substitutions.map((s, i) => [s, i]).filter(([s]) => !q || s.pattern.includes(q) || s.replacement.includes(q));
+
+  return (
+    <div className="view">
+      <div className="view-narrow">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ flex: 1 }}>用語辞書</h2>
+          {dirty && <span style={{ color: 'var(--warn)', fontSize: 12 }}>未保存の変更があります</span>}
+          <button className="primary" onClick={save} disabled={saving || !dirty}>{saving ? '保存中…' : '保存'}</button>
+        </div>
+        <p className="lead">よく間違って聞き取られる言葉と正しい表記を登録します。文字起こし画面で言葉を選択して登録することもできます。</p>
+
+        <div className="section">
+          <h3>話題のヒント</h3>
+          <p className="lead" style={{ marginBottom: 6 }}>動画でよく出る専門用語を書いておくと、最初から正しく聞き取られやすくなります。</p>
+          <textarea style={{ width: '100%', minHeight: 70, resize: 'vertical' }} value={data.context}
+            onChange={e => { const v = e.target.value; change(d => ({ ...d, context: v })); }} />
+        </div>
+
+        <div className="section">
+          <h3>誤認識の置き換え（{data.substitutions.length} 件）</h3>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            <input type="text" style={{ flex: 1 }} placeholder="誤って認識された言葉" value={newSub.pattern} onChange={e => setNewSub(s => ({ ...s, pattern: e.target.value }))} />
+            <input type="text" style={{ flex: 1 }} placeholder="正しい表記" value={newSub.replacement} onChange={e => setNewSub(s => ({ ...s, replacement: e.target.value }))} />
+            <select value={newSub.type} onChange={e => setNewSub(s => ({ ...s, type: e.target.value }))} title="正規表現は上級者向け">
+              <option value="literal">そのまま</option>
+              <option value="regex">正規表現</option>
+            </select>
+            <button onClick={() => {
+              if (!newSub.pattern) return;
+              change(d => ({ ...d, substitutions: [{ ...newSub }, ...d.substitutions] }));
+              setNewSub({ pattern: '', replacement: '', type: 'literal' });
+            }}>追加</button>
+          </div>
+          <input type="search" style={{ width: '100%', marginBottom: 6 }} placeholder="登録済みの言葉を検索" value={query} onChange={e => setQuery(e.target.value)} />
+          <table className="glossary-table">
+            <thead><tr><th>誤って認識された言葉</th><th>正しい表記</th><th>種類</th><th /></tr></thead>
+            <tbody>
+              {subs.map(([s, i]) => (
+                <tr key={i}>
+                  <td><input type="text" value={s.pattern} onChange={e => { const v = e.target.value; change(d => { const a = [...d.substitutions]; a[i] = { ...a[i], pattern: v }; return { ...d, substitutions: a }; }); }} /></td>
+                  <td><input type="text" value={s.replacement} onChange={e => { const v = e.target.value; change(d => { const a = [...d.substitutions]; a[i] = { ...a[i], replacement: v }; return { ...d, substitutions: a }; }); }} /></td>
+                  <td>
+                    <select value={s.type} onChange={e => { const v = e.target.value; change(d => { const a = [...d.substitutions]; a[i] = { ...a[i], type: v }; return { ...d, substitutions: a }; }); }}>
+                      <option value="literal">そのまま</option>
+                      <option value="regex">正規表現</option>
+                    </select>
+                  </td>
+                  <td><button className="ghost" title="削除" onClick={() => change(d => ({ ...d, substitutions: d.substitutions.filter((_, idx) => idx !== i) }))}>✕</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="section">
+          <h3>重要語</h3>
+          <p className="lead" style={{ marginBottom: 6 }}>含まれる箇所に目印を付けたい言葉です。</p>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input type="text" style={{ flex: 1 }} placeholder="重要語を追加" value={newTerm} onChange={e => setNewTerm(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && newTerm.trim()) { change(d => ({ ...d, important_terms: [newTerm.trim(), ...d.important_terms] })); setNewTerm(''); } }} />
+            <button onClick={() => { if (!newTerm.trim()) return; change(d => ({ ...d, important_terms: [newTerm.trim(), ...d.important_terms] })); setNewTerm(''); }}>追加</button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {data.important_terms.map((term, i) => (
+              <span key={`${term}-${i}`} className="term-chip">{term}
+                <button onClick={() => change(d => ({ ...d, important_terms: d.important_terms.filter((_, idx) => idx !== i) }))}>✕</button>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 設定状況 ──────────────────────────────────────────────────────────────
+
+function SettingsView({ health, reload, notify }) {
+  const [testing, setTesting] = useState({});
+  const [results, setResults] = useState({});
+  const icons = { ok: '✓', warn: '!', error: '✗', off: '–' };
+
+  const test = async (key) => {
+    setTesting(t => ({ ...t, [key]: true }));
+    try {
+      const r = await postJson(`/api/health/test/${key}`);
+      setResults(x => ({ ...x, [key]: r }));
+    } catch (e) {
+      notify(`接続テストに失敗しました: ${e.message}`, 'error');
+    } finally {
+      setTesting(t => ({ ...t, [key]: false }));
+    }
+  };
+
+  const errors = health.filter(c => c.status === 'error').length;
+
+  return (
+    <div className="view">
+      <div className="view-narrow">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ flex: 1 }}>設定状況</h2>
+          <button onClick={reload}>再確認</button>
+        </div>
+        <p className="lead">
+          各機能が使える状態かを確認できます。設定はプロジェクト直下の <code>config.yaml</code> で変更します（保存すると自動で反映されます）。
+          {errors > 0 && <><br /><b style={{ color: 'var(--failed)' }}>{errors} 件の設定に問題があります。</b></>}
+        </p>
+        <div className="check-list">
+          {health.map(c => {
+            const r = results[c.key];
+            const shown = r || c;
+            return (
+              <div key={c.key} className="check-row">
+                <span className={`check-icon ${shown.status}`}>{icons[shown.status]}</span>
+                <div className="check-body">
+                  <b>{c.label}</b>
+                  <span className="detail">{shown.detail}</span>
+                  {!r && c.hint && <span className="hint">{c.hint}</span>}
+                </div>
+                {c.testable && <button onClick={() => test(c.key)} disabled={testing[c.key]}>{testing[c.key] ? '確認中…' : '接続テスト'}</button>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ツール ────────────────────────────────────────────────────────────────
+
+const IDB_NAME = 'transcribe-ui';
+const IDB_STORE = 'handles';
+
+function idbPut(handle) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => {
+      const tx = e.target.result.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(handle, 'convertDir');
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    };
+    req.onerror = reject;
+  });
+}
+
+function idbGet() {
+  return new Promise(resolve => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => {
+      const get = e.target.result.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get('convertDir');
+      get.onsuccess = () => resolve(get.result || null);
+      get.onerror = () => resolve(null);
+    };
+    req.onerror = () => resolve(null);
+  });
+}
+
+function M4aConverter({ notify }) {
+  const [items, setItems] = useState([]);
+  const [dirName, setDirName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const dirRef = useRef(null);
+  const pickingRef = useRef(false);
+
+  useEffect(() => { idbGet().then(h => { if (h) { dirRef.current = h; setDirName(h.name); } }); }, []);
+
+  const pickDir = async () => {
+    if (pickingRef.current) return;
+    pickingRef.current = true;
+    try {
+      const h = await window.showDirectoryPicker({ mode: 'readwrite', ...(dirRef.current ? { startIn: dirRef.current } : {}) });
+      dirRef.current = h;
+      setDirName(h.name);
+      await idbPut(h);
+    } catch (e) {
+      if (e.name !== 'AbortError') notify(`フォルダを選択できません: ${e.message}`, 'error');
+    } finally {
+      pickingRef.current = false;
+    }
+  };
+
+  const convert = async () => {
+    const targets = items.filter(i => i.status === 'pending');
+    if (!targets.length) return;
+    setBusy(true);
+    try {
+      if (!dirRef.current) {
+        await pickDir();
+        if (!dirRef.current) return;
+      }
+      for (const item of targets) {
+        setItems(prev => prev.map(f => f.id === item.id ? { ...f, status: 'converting' } : f));
+        try {
+          const form = new FormData();
+          form.append('files', item.file);
+          const res = await fetch('/api/convert', { method: 'POST', body: form });
+          if (!res.ok) throw new Error(await res.text());
+          const blob = await res.blob();
+          const name = item.file.name.replace(/\.m4a$/i, '.mp3');
+          const fh = await dirRef.current.getFileHandle(name, { create: true });
+          const w = await fh.createWritable();
+          await w.write(blob);
+          await w.close();
+          setItems(prev => prev.map(f => f.id === item.id ? { ...f, status: 'done' } : f));
+        } catch (e) {
+          setItems(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
+          notify(`${item.file.name}: ${e.message}`, 'error');
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card tool-item">
+      <b>m4a → mp3 変換</b>
+      <p>録音アプリの m4a を mp3 にして手元のフォルダに保存します。文字起こしだけが目的なら変換は不要です（m4a のまま追加できます）。</p>
+      <div className={`drop-area${dragOver ? ' drag-over' : ''}`}
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => {
+          e.preventDefault(); setDragOver(false);
+          const files = Array.from(e.dataTransfer.files).filter(f => /\.m4a$/i.test(f.name));
+          setItems(prev => [...prev, ...files.map(f => ({ id: Math.random(), file: f, status: 'pending' }))]);
+        }}>
+        m4a をここにドロップ
+      </div>
+      {items.length > 0 && (
+        <ul className="convert-list">
+          {items.map(i => (
+            <li key={i.id} className={i.status}>
+              {{ pending: '○', converting: '⏳', done: '✓', error: '✗' }[i.status]} {i.file.name}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="btns">
+        <button className="primary" onClick={convert} disabled={busy || !items.some(i => i.status === 'pending')}>変換して保存</button>
+        <button onClick={pickDir} disabled={busy}>📁 {dirName || '保存先を選択'}</button>
+        {items.length > 0 && <button onClick={() => setItems([])} disabled={busy}>クリア</button>}
+      </div>
+    </div>
+  );
+}
+
+function ToolsView({ notify, onStarted, enabledPost }) {
+  const [confirm, setConfirm] = useState(null);
+
+  const run = async (path, body, message) => {
+    try {
+      await postJson(path, body);
+      notify(message, 'success');
+      onStarted();
+    } catch (e) {
+      notify(`実行できませんでした: ${e.message}`, 'error');
+    }
+  };
+
+  const tools = [
+    {
+      key: 'summarize', stage: 'summarize', title: 'まとめを一括作成',
+      desc: 'まとめがないジョブのまとめを作成します。',
+      pending: () => run('/api/summarize', { all: false }, '未作成のまとめを作成します'),
+      all: { label: '全件作り直す', confirm: 'すべての完了ジョブのまとめを作り直します。件数分の AI 利用料金が発生します。', action: () => run('/api/summarize', { all: true }, 'すべてのまとめを作り直します') },
+    },
+    {
+      key: 'notion', stage: 'notion_sync', title: 'Notion に一括登録',
+      desc: 'まだ Notion に登録していないジョブのまとめを登録します。',
+      pending: () => run('/api/sync-notion', { all: false }, '未登録のジョブを Notion に登録します'),
+      all: { label: '全件登録し直す', confirm: 'すべてのジョブを Notion に登録し直します（既存ページは上書き更新）。', action: () => run('/api/sync-notion', { all: true }, 'すべてのジョブを Notion に登録し直します') },
+    },
+    {
+      key: 'docs', stage: 'docs_sync', title: 'Google Docs に一括登録',
+      desc: 'まだ Google Docs に登録していないジョブを登録します。',
+      pending: () => run('/api/sync', { all: false }, '未登録のジョブを Google Docs に登録します'),
+      all: { label: '全件登録し直す', confirm: 'すべてのジョブを Google Docs に登録し直します。', action: () => run('/api/sync', { all: true }, 'すべてのジョブを Google Docs に登録し直します') },
+    },
+  ];
+
+  return (
+    <div className="view">
+      <div className="view-narrow">
+        <h2>ツール</h2>
+        <p className="lead">通常は使う必要はありません。設定を後から有効にした場合や、まとめ方を変えて作り直したいときに使います。</p>
+
+        <div className="section">
+          <h3>一括処理</h3>
+          <div className="tool-grid">
+            {tools.map(t => {
+              const enabled = enabledPost.includes(t.stage);
+              return (
+                <div key={t.key} className="card tool-item">
+                  <b>{t.title}</b>
+                  <p>{enabled ? t.desc : '無効または未設定です（設定状況を確認してください）。'}</p>
+                  <div className="btns">
+                    <button onClick={t.pending} disabled={!enabled}>未処理分を実行</button>
+                    <button onClick={() => setConfirm(t.all)} disabled={!enabled}>{t.all.label}</button>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="card tool-item">
+              <b>一時ファイルを削除</b>
+              <p>作業フォルダ（data/work）に残ったダウンロード済み音声などを削除して容量を空けます。処理中は実行しないでください。</p>
+              <div className="btns">
+                <button onClick={() => setConfirm({ confirm: '作業フォルダの一時ファイルを削除します。失敗したジョブを再開すると、音声を再ダウンロードします。', action: () => run('/api/clean', {}, '一時ファイルを削除します') })}>削除する</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="section">
+          <h3>ファイル変換</h3>
+          <div className="tool-grid"><M4aConverter notify={notify} /></div>
+        </div>
+      </div>
+      {confirm && (
+        <ConfirmModal title="実行しますか？" confirmLabel="実行" onClose={() => setConfirm(null)} onConfirm={confirm.action}>
+          {confirm.confirm}
+        </ConfirmModal>
+      )}
+    </div>
+  );
+}
+
+// ─── ログ ──────────────────────────────────────────────────────────────────
+
+function LogPanel({ logs }) {
+  const [open, setOpen] = useState(() => storageGet('transcribe.logOpen', false));
+  const [height, setHeight] = useState(() => storageGet('transcribe.logHeight', 220));
+  const endRef = useRef(null);
+
+  useEffect(() => { storageSet('transcribe.logOpen', open); }, [open]);
+  useEffect(() => { storageSet('transcribe.logHeight', height); }, [height]);
+  useEffect(() => { if (open) endRef.current?.scrollIntoView({ behavior: 'auto' }); }, [logs, open]);
+
+  const onDrag = (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = height;
+    const move = ev => setHeight(Math.max(80, Math.min(window.innerHeight - 200, startH - (ev.clientY - startY))));
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  const last = logs[logs.length - 1] || '処理ログはまだありません';
+
+  return (
+    <>
+      {open && <div className="log-resizer" onMouseDown={onDrag} />}
+      {open && (
+        <div className="log-viewer" style={{ height }}>
+          {logs.length === 0
+            ? <span className="log-empty">処理を開始すると、ここに詳細なログが表示されます</span>
+            : logs.map((line, i) => {
+              const cls = /\[完了 \(exit=0\)\]/.test(line) ? ' done' : /exit=[1-9]|ERROR|エラー|失敗/.test(line) ? ' error' : '';
+              return <div key={i} className={`log-line${cls}`}>{line}</div>;
+            })}
+          <div ref={endRef} />
+        </div>
+      )}
+      <div className="log-bar" onClick={() => setOpen(o => !o)} title="クリックで詳細ログを開閉">
+        <span>{open ? '▼' : '▲'} 詳細ログ</span>
+        <span className="last-line">{last}</span>
+      </div>
+    </>
+  );
+}
+
+// ─── アプリ本体 ────────────────────────────────────────────────────────────
+
+function App() {
+  const [jobs, setJobs] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [queue, setQueue] = useState({ running: null, pending: 0 });
+  const [health, setHealth] = useState([]);
+  const [view, setView] = useState('add');
+  const [selectedJobId, setSelectedJobId] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [logs, setLogs] = useState([]);
+  const [toasts, setToasts] = useState([]);
+  const [showHelp, setShowHelp] = useState(() => !storageGet('transcribe.helpSeen', false));
+  const [darkMode, setDarkMode] = useState(() => storageGet('transcribe.dark', true));
+  const filterInitialized = useRef(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : '');
+    storageSet('transcribe.dark', darkMode);
   }, [darkMode]);
 
-  const onDragStart = (e) => {
-  e.preventDefault();
-  const startY = e.clientY;
-  const startH = logHeight;
-  const onMove = (ev) => {
-    const delta = ev.clientY - startY;
-    setLogHeight(Math.max(60, Math.min(600, startH - delta)));
-  };
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-  };
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
-};
+  const notify = useCallback((text, kind = 'info') => {
+    const id = Math.random();
+    setToasts(t => [...t, { id, text, kind }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), kind === 'error' ? 8000 : 5000);
+  }, []);
 
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await fetch('/api/jobs');
-      if (!res.ok) return;
-      const data = await res.json();
+      const [data, q] = await Promise.all([apiFetch('/api/jobs'), apiFetch('/api/queue')]);
       setJobs([...data].reverse());
+      setQueue(q);
+      setLoaded(true);
     } catch (_) {}
+  }, []);
+
+  const fetchHealth = useCallback(() => {
+    apiFetch('/api/health').then(setHealth).catch(() => {});
   }, []);
 
   useEffect(() => {
     fetchJobs();
+    fetchHealth();
     const id = setInterval(fetchJobs, 3000);
     return () => clearInterval(id);
-  }, [fetchJobs]);
+  }, [fetchJobs, fetchHealth]);
 
-  const connectWebSocket = useCallback((taskId) => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+  // 初回表示時: 要対応があればそれを、なければすべてを表示
+  useEffect(() => {
+    if (!loaded || filterInitialized.current) return;
+    filterInitialized.current = true;
+    setFilter(jobs.some(j => j.attention?.length > 0) ? 'attention' : 'all');
+  }, [loaded, jobs]);
 
-    const ws = new WebSocket(`ws://${location.host}/ws/logs/${taskId}`);
-    wsRef.current = ws;
-    setActiveCount(c => c + 1);
-
-    ws.onmessage = (e) => {
-      setLogs(prev => [...prev, e.data]);
+  // 全タスクのログを 1 本の WebSocket で受け取る
+  useEffect(() => {
+    let ws;
+    let retry;
+    let closed = false;
+    const connect = () => {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws/logs/global`);
+      ws.onmessage = (e) => {
+        setLogs(prev => [...prev.slice(-499), e.data]);
+        const m = /\[完了 \(exit=(\d+)\)\]/.exec(e.data);
+        if (m) {
+          fetchJobs();
+          if (m[1] !== '0') notify('処理の一部が失敗しました。「要対応」または詳細ログを確認してください。', 'error');
+        }
+      };
+      ws.onclose = () => { if (!closed) retry = setTimeout(connect, 3000); };
     };
+    connect();
+    return () => { closed = true; clearTimeout(retry); ws && ws.close(); };
+  }, [fetchJobs, notify]);
 
-    ws.onclose = () => {
-      setActiveCount(c => Math.max(0, c - 1));
-      fetchJobs();
-    };
+  const enabledPost = useMemo(() => {
+    const ok = key => ['ok', 'warn'].includes(health.find(c => c.key === key)?.status);
+    return Object.entries(POST_STAGE_KEYS).filter(([, key]) => ok(key)).map(([stage]) => stage);
+  }, [health]);
 
-    ws.onerror = () => {
-      setLogs(prev => [...prev, '[WebSocket エラー]']);
-    };
-  }, [fetchJobs]);
+  const healthErrors = health.filter(c => c.status === 'error').length;
+  const selectedJob = jobs.find(j => j.id === selectedJobId);
 
-  const handleTaskStart = useCallback((taskId) => {
-    setLogs([`[タスク開始] ${taskId}`]);
-    connectWebSocket(taskId);
-  }, [connectWebSocket]);
+  const openJob = (id) => { setSelectedJobId(id); setView('job'); };
+  const go = (v) => { setView(v); if (v !== 'job') setSelectedJobId(null); if (v === 'settings') fetchHealth(); };
+  const closeHelp = () => { setShowHelp(false); storageSet('transcribe.helpSeen', true); };
 
-  const handleMessage = useCallback((msg) => {
-    setLogs(prev => [...prev, msg]);
-  }, []);
-
-  const filteredJobs = jobs
-    .filter(j => filterStatus === 'all' || j.status === filterStatus)
-    .filter(j => {
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        (j.title || '').toLowerCase().includes(q) ||
-        (j.url || '').toLowerCase().includes(q)
-      );
-    });
+  let content;
+  if (view === 'job' && selectedJobId) {
+    content = selectedJob
+      ? <JobView key={selectedJobId} jobId={selectedJobId} listJob={selectedJob} enabledPost={enabledPost} notify={notify}
+          onChanged={fetchJobs} onClosed={() => go('add')} />
+      : <div className="view"><div className="empty-state">このジョブは見つかりません（削除された可能性があります）。</div></div>;
+  } else if (view === 'glossary') {
+    content = <GlossaryView notify={notify} />;
+  } else if (view === 'settings') {
+    content = <SettingsView health={health} reload={fetchHealth} notify={notify} />;
+  } else if (view === 'tools') {
+    content = <ToolsView notify={notify} onStarted={fetchJobs} enabledPost={enabledPost} />;
+  } else {
+    content = <AddView health={health} notify={notify} isFirstUse={loaded && jobs.length === 0} onOpenHelp={() => setShowHelp(true)}
+      onAdded={() => { fetchJobs(); setFilter('progress'); }} />;
+  }
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <header className="app-header">
-        <h1>transcribe Web UI</h1>
-        {activeCount > 0 && <span className="running-badge">実行中: {activeCount}</span>}
-        <button
-          onClick={() => setDarkMode(d => !d)}
-          style={{ marginLeft: 'auto', fontSize: '16px', padding: '4px 8px', background: 'none', border: 'none' }}
-        >
-          {darkMode ? '☀️' : '🌙'}
+        <span className="app-title" onClick={() => go('add')}>transcribe<small>文字起こし・まとめ</small></span>
+        <button className={`nav-btn${view === 'add' ? ' active' : ''}`} onClick={() => go('add')}>＋ 追加</button>
+        <QueueIndicator jobs={jobs} queue={queue} onOpenJob={openJob} />
+        <span className="header-spacer" />
+        <button className={`nav-btn${view === 'glossary' ? ' active' : ''}`} onClick={() => go('glossary')} title="誤認識しやすい言葉の登録">用語辞書</button>
+        <button className={`nav-btn${view === 'tools' ? ' active' : ''}`} onClick={() => go('tools')} title="一括処理・変換など">ツール</button>
+        <button className={`nav-btn${view === 'settings' ? ' active' : ''}`} onClick={() => go('settings')} title="各機能が使える状態か確認">
+          {healthErrors > 0 && <span className="dot" />}設定状況
         </button>
+        <button onClick={() => setShowHelp(true)} title="使い方">？ 使い方</button>
+        <button className="ghost" onClick={() => setDarkMode(d => !d)} title="表示テーマの切り替え">{darkMode ? '☀️' : '🌙'}</button>
       </header>
       <main className="app-main">
-        <aside className="sidebar">
-          <div className="sidebar-header">ジョブ一覧 ({filteredJobs.length}/{jobs.length})</div>
-          <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
-            <input
-              style={{
-                width: '100%',
-                background: 'var(--bg)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                color: 'var(--text)',
-                padding: '4px 8px',
-                fontSize: '12px',
-              }}
-              placeholder="タイトル・URLで検索"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <div className="filter-row">
-            {['all', 'done', 'failed', 'queued'].map(s => (
-              <button
-                key={s}
-                className={`filter-btn${filterStatus === s ? ' active' : ''}`}
-                onClick={() => setFilterStatus(s)}
-              >
-                {s === 'all' ? 'すべて' : s}
-              </button>
-            ))}
-          </div>
-          <JobList jobs={filteredJobs} selectedId={selectedJobId} onSelect={setSelectedJobId} />
-        </aside>
+        <Sidebar jobs={jobs} filter={filter} setFilter={setFilter} selectedId={view === 'job' ? selectedJobId : null}
+          onSelect={openJob} enabledPost={enabledPost} />
         <section className="main-content">
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <button
-              onClick={() => setShowGlossary(g => !g)}
-              style={{ margin: '8px 8px 0', fontSize: '12px' }}
-            >
-              用語辞書を編集
-            </button>
-            {showGlossary
-              ? <GlossaryEditor onClose={() => setShowGlossary(false)} />
-              : <CommandPanel onTaskStart={handleTaskStart} onMessage={handleMessage} />
-            }
-          </div>
-          <div
-            onMouseDown={onDragStart}
-            style={{
-              height: '6px',
-              cursor: 'row-resize',
-              background: 'var(--border)',
-              flexShrink: 0,
-              margin: '4px 0',
-            }}
-          />
-          <LogViewer logs={logs} height={logHeight} />
-          {selectedJobId && (
-            <JobDetail
-              jobId={selectedJobId}
-              onClose={() => setSelectedJobId(null)}
-              onTaskStart={handleTaskStart}
-              onMessage={handleMessage}
-              onRefresh={fetchJobs}
-            />
-          )}
+          {content}
+          <LogPanel logs={logs} />
         </section>
       </main>
+      <Toasts toasts={toasts} />
+      {showHelp && <HelpModal onClose={closeHelp} />}
     </div>
   );
 }

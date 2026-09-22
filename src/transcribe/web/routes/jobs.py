@@ -75,7 +75,18 @@ async def get_job(job_id: int, cfg: ConfigDep):
     row = get_job_by_id(cfg.state_db, job_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return dict(row)
+    job = dict(row)
+    out = Path(job["output_dir"]) if job["output_dir"] else None
+    job["has_transcript"] = bool(out and (out / "transcript.md").exists())
+    job["has_summary"] = bool(out and (out / "summary.md").exists())
+    job["notion_url"] = None
+    if out and (out / "notion.json").exists():
+        try:
+            page_id = json.loads((out / "notion.json").read_text(encoding="utf-8")).get("page_id", "")
+            job["notion_url"] = f"https://www.notion.so/{page_id.replace('-', '')}" if page_id else None
+        except Exception:
+            pass
+    return job
 
 
 @router.get("/jobs/{job_id}/segments")
