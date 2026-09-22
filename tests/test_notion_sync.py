@@ -568,3 +568,40 @@ def test_query_notion_db_503_logs_warning(mock_post, mock_sleep, notion_cfg, cap
 
     warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
     assert any("503" in m and "retry" in m for m in warning_msgs)
+
+
+# ─── 本文置換: 追加失敗時は旧本文を残す ───────────────────────────────────
+
+
+def test_replace_page_body_keeps_old_blocks_on_failure():
+    from transcribe.notion_sync import _replace_page_body
+
+    client = MagicMock()
+    client.blocks.children.list.return_value = {"results": [{"id": "old1"}], "has_more": False}
+    client.blocks.children.append.side_effect = [
+        {"results": [{"id": "new1"}]},
+        RuntimeError("API error"),
+    ]
+    blocks = [{"type": "paragraph", "paragraph": {"rich_text": []}}] * 150
+
+    with pytest.raises(RuntimeError):
+        _replace_page_body(client, "page", blocks)
+
+    deleted = [c.kwargs["block_id"] for c in client.blocks.delete.call_args_list]
+    assert deleted == ["new1"]
+
+
+def test_replace_page_body_deletes_old_after_append():
+    from transcribe.notion_sync import _replace_page_body
+
+    client = MagicMock()
+    client.blocks.children.list.side_effect = [
+        {"results": [{"id": "old1"}], "has_more": True, "next_cursor": "c"},
+        {"results": [{"id": "old2"}], "has_more": False},
+    ]
+    client.blocks.children.append.return_value = {"results": [{"id": "new1"}]}
+
+    _replace_page_body(client, "page", [{"type": "paragraph", "paragraph": {"rich_text": []}}])
+
+    deleted = [c.kwargs["block_id"] for c in client.blocks.delete.call_args_list]
+    assert deleted == ["old1", "old2"]

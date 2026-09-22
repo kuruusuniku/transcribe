@@ -193,34 +193,59 @@ def _build_properties(
     return props
 
 
-def _clear_page_body(client, page_id: str) -> None:
-    has_more = True
+def _list_child_block_ids(client, page_id: str) -> list[str]:
+    """ページ直下のブロック ID を全件取得する（削除前に一覧を確定させ、ページング中の削除でカーソルがずれるのを防ぐ）。"""
+    ids: list[str] = []
     start_cursor = None
-    while has_more:
+    while True:
         kwargs: dict = {"block_id": page_id}
         if start_cursor:
             kwargs["start_cursor"] = start_cursor
         result = client.blocks.children.list(**kwargs)
-        for block in result.get("results", []):
-            try:
-                client.blocks.delete(block_id=block["id"])
-            except Exception as e:
-                logger.warning(f"ブロック削除失敗 (id={block['id']}): {e}")
-        has_more = result.get("has_more", False)
+        ids.extend(block["id"] for block in result.get("results", []))
+        if not result.get("has_more", False):
+            return ids
         start_cursor = result.get("next_cursor")
 
 
-def _append_blocks_in_batches(client, page_id: str, blocks: list[dict]) -> None:
+def _delete_blocks(client, block_ids: list[str]) -> None:
+    for block_id in block_ids:
+        try:
+            client.blocks.delete(block_id=block_id)
+        except Exception as e:
+            logger.warning(f"ブロック削除失敗 (id={block_id}): {e}")
+
+
+def _append_blocks_in_batches(client, page_id: str, blocks: list[dict]) -> list[str]:
+    """ブロックを 100 件ずつ追加し、追加されたブロック ID を返す。
+
+    途中で失敗した場合はそれまでに追加したブロックを削除してから例外を送出する。
+    """
+    appended: list[str] = []
     for i in range(0, len(blocks), _BLOCKS_PER_REQUEST):
         try:
-            client.blocks.children.append(block_id=page_id, children=blocks[i : i + _BLOCKS_PER_REQUEST])
+            resp = client.blocks.children.append(block_id=page_id, children=blocks[i : i + _BLOCKS_PER_REQUEST])
         except Exception:
             end = min(i + _BLOCKS_PER_REQUEST, len(blocks)) - 1
             logger.error(
                 f"blocks append 失敗 (page_id={page_id}, batch={i // _BLOCKS_PER_REQUEST + 1},"
                 f" blocks {i}–{end}/{len(blocks)})"
             )
+            _delete_blocks(client, appended)
             raise
+        appended.extend(block["id"] for block in resp.get("results", []))
+    return appended
+
+
+def _replace_page_body(client, page_id: str, blocks: list[dict]) -> None:
+    """本文を置き換える。新しいブロックを先に追加し、成功してから旧ブロックを削除する。
+
+    追加に失敗した場合は旧本文がそのまま残る（空・中途半端なページにならない）。
+    """
+    old_ids = _list_child_block_ids(client, page_id)
+    if blocks:
+        _append_blocks_in_batches(client, page_id, blocks)
+    _delete_blocks(client, old_ids)
 
 
 def _query_notion_db(cfg: NotionConfig, video_url: str, database_id: str) -> list[dict]:
@@ -296,17 +321,15 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_t
             existing_page_id = saved_id
 
     if existing_page_id:
+        try:
+            _replace_page_body(client, existing_page_id, blocks)
+        except Exception:
+            logger.error(
+                f"Notion ページ本文の更新に失敗しました（旧本文を保持）: "
+                f"https://notion.so/{existing_page_id.replace('-', '')}"
+            )
+            raise
         client.pages.update(page_id=existing_page_id, properties=props)
-        _clear_page_body(client, existing_page_id)
-        if blocks:
-            try:
-                _append_blocks_in_batches(client, existing_page_id, blocks)
-            except Exception:
-                logger.error(
-                    f"Notion ページが不完全な状態です。手動確認: "
-                    f"https://notion.so/{existing_page_id.replace('-', '')}"
-                )
-                raise
         logger.info(f"Notion ページを更新しました: {title} (id={existing_page_id})")
     else:
         first_batch = blocks[:_BLOCKS_PER_REQUEST]
