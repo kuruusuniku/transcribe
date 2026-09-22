@@ -48,6 +48,7 @@ tmp/
 # 出力ディレクトリ全体
 data/output/
 data/uploads/
+data/work/
 
 # 個人の処理対象URL
 urls.txt
