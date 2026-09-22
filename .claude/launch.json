@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "transcribe-web",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "transcribe", "web"],
+      "port": 8000
+    }
+  ]
+}
