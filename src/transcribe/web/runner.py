@@ -1,61 +1,35 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 from pathlib import Path
 from uuid import uuid4
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from .worker import Task, worker
 
-PYTHON = sys.executable
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 # task_id -> asyncio.Queue[str | None]
 active_tasks: dict[str, asyncio.Queue] = {}
+
+FINISHED_TASK_TTL_SECONDS = 300
 
 # queues for global log subscribers
 global_subscribers: set[asyncio.Queue] = set()
 
 
-async def _run(task_id: str, cmd: list[str], cleanup: Path | None = None) -> None:
-    q: asyncio.Queue[str | None] = asyncio.Queue()
-    active_tasks[task_id] = q
+def deliver(task: Task, text: str) -> None:
+    """（イベントループ上で実行）タスクのログ 1 行を購読者に配信する。"""
+    task.queue.put_nowait(text)
+    _broadcast(task.id, text)
 
-    exit_msg = "[完了]"
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
-            cwd=str(PROJECT_ROOT),
-        )
 
-        assert proc.stdout is not None
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-            text = line.decode("utf-8", errors="replace").rstrip("\r\n")
-            await q.put(text)
-            _broadcast(task_id, text)
-
-        await proc.wait()
-        exit_msg = f"[完了 (exit={proc.returncode})]"
-    except Exception as e:
-        exit_msg = f"[ERROR] {e}"
-
-    await q.put(exit_msg)
-    await q.put(None)
-    _broadcast(task_id, exit_msg)
-
-    active_tasks.pop(task_id, None)
-
-    if cleanup is not None:
-        try:
-            cleanup.unlink(missing_ok=True)
-        except OSError:
-            pass
+def finish(task: Task, exit_msg: str) -> None:
+    """（イベントループ上で実行）タスク完了を通知し、ストリームを閉じる。"""
+    task.queue.put_nowait(exit_msg)
+    task.queue.put_nowait(None)
+    _broadcast(task.id, exit_msg)
+    # 完了直後に WebSocket が接続しても取りこぼさないよう、しばらくキューを残す
+    task.loop.call_later(FINISHED_TASK_TTL_SECONDS, active_tasks.pop, task.id, None)
 
 
 def _broadcast(task_id: str, text: str) -> None:
@@ -68,10 +42,19 @@ def _broadcast(task_id: str, text: str) -> None:
 
 
 def start_task(cmd: list[str], cleanup: Path | None = None) -> str:
+    """CLI コマンド（引数リスト）をワーカーのキューに投入し task_id を返す。
+
+    イベントループ上から呼ぶこと。
+    """
     task_id = str(uuid4())
-    asyncio.create_task(_run(task_id, cmd, cleanup))
+    q: asyncio.Queue[str | None] = asyncio.Queue()
+    active_tasks[task_id] = q
+    task = Task(id=task_id, args=cmd, loop=asyncio.get_running_loop(), queue=q, cleanup=cleanup)
+    ahead = worker.submit(task)
+    if ahead:
+        deliver(task, f"[待機中] 先行タスク {ahead} 件の完了後に実行します")
     return task_id
 
 
 def transcribe_cmd(*args: str) -> list[str]:
-    return [PYTHON, "-m", "transcribe", *args]
+    return list(args)

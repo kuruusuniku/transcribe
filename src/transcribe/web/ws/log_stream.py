@@ -43,6 +43,7 @@ async def ws_logs(websocket: WebSocket, task_id: str):
         while True:
             line = await q.get()
             if line is None:
+                active_tasks.pop(task_id, None)
                 await websocket.send_text("[完了]")
                 break
             await websocket.send_text(line)

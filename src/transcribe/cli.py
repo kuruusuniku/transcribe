@@ -642,6 +642,10 @@ def web(
         )
         raise typer.Exit(1)
     web_app.state.auth_token = token or None
+
+    # ワーカースレッドで実行するコマンドの出力をタスクログに流す
+    from .web import output_router
+    output_router.install()
     if token:
         console.print("[cyan]トークン認証が有効です。初回は /?token=<token> でアクセスしてください。[/cyan]")
 
@@ -653,6 +657,7 @@ def web(
 def delete(
     job_id: int = typer.Argument(..., help="削除するジョブID"),
     files: bool = typer.Option(False, "--files", help="出力ディレクトリも削除する"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="確認プロンプトをスキップ"),
 ) -> None:
     """DBのジョブレコードを削除する（--files で出力ディレクトリも削除）"""
     cfg, _ = _load_cfg_and_glossary()
@@ -665,7 +670,7 @@ def delete(
 
     output_dir = Path(job["output_dir"]) if job["output_dir"] else None
 
-    if files and output_dir is not None and output_dir.exists():
+    if files and output_dir is not None and output_dir.exists() and not yes:
         typer.confirm(f"出力ディレクトリ {output_dir} も削除しますか?", abort=True)
 
     delete_job(db, job_id)

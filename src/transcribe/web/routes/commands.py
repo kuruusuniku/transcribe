@@ -100,7 +100,7 @@ async def retry_job(body: RetryBody):
 
 @router.post("/delete")
 async def delete_job(body: DeleteBody):
-    cmd = transcribe_cmd("delete", str(body.job_id))
+    cmd = transcribe_cmd("delete", str(body.job_id), "--yes")
     if body.files:
         cmd.append("--files")
     task_id = start_task(cmd)
