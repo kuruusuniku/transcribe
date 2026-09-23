@@ -4,6 +4,9 @@ context: '武術・身体技法の稽古指導。頻出語:
 
   '
 substitutions:
+- pattern: アナザーフロンティア
+  replacement: アナザフロンティア
+  type: literal
 - pattern: 穴あば
   replacement: あなぁ〜ば
   type: literal
