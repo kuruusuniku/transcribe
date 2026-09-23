@@ -457,3 +457,19 @@ def test_truncated_summary_marked_as_attention(client, mock_config, tmp_db, tmp_
     assert job["summary_truncated"] is True
     assert "まとめが途中で切れています" in job["attention"]
     assert client.get(f"/api/jobs/{job_id}").json()["summary_truncated"] is True
+
+
+def test_jobs_include_notion_url(client, mock_config, tmp_db, tmp_output):
+    import json as _json
+
+    job_id = upsert_job(tmp_db, "https://www.youtube.com/watch?v=notionurl1")
+    out = tmp_output / "notion_linked"
+    out.mkdir()
+    (out / "notion.json").write_text(
+        _json.dumps({"database_id": "db", "page_id": "3e33a9ee-ef9a-815c-8945-c47ada501d89"}), encoding="utf-8"
+    )
+    update_status(tmp_db, job_id, "done", output_dir=str(out))
+
+    job = next(j for j in client.get("/api/jobs").json() if j["id"] == job_id)
+    assert job["notion_url"] == "https://www.notion.so/3e33a9eeef9a815c8945c47ada501d89"
+    assert client.get(f"/api/jobs/{job_id}").json()["notion_url"] == job["notion_url"]

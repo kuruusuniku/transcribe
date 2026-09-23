@@ -84,13 +84,20 @@ function storageSet(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
 }
 
-function renderMarkdown(text, { highlightReview = false } = {}) {
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function renderMarkdown(text, { highlightReview = false, highlightTerm = '' } = {}) {
   let src = text || '';
   if (highlightReview) {
     // 要確認（低信頼・無音疑い・繰り返し圧縮）の行をハイライトする
     src = src.split('\n').map(line => (
       line.startsWith('⚠️') ? `<mark class="review">${line.replace(/</g, '&lt;')}</mark>` : line
     )).join('\n');
+  }
+  if (highlightTerm) {
+    src = src.replace(new RegExp(escapeRegExp(highlightTerm), 'g'), m => `<mark class="hit">${m}</mark>`);
   }
   const html = marked.parse(src, { breaks: true, gfm: true });
   const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
@@ -173,6 +180,53 @@ function ConfirmModal({ title, children, confirmLabel, danger, onConfirm, onClos
         </button>
       </div>
     </Modal>
+  );
+}
+
+function ContextMenu({ x, y, items, onClose }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useEffect(() => {
+    // 画面からはみ出さない位置に寄せる
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos({
+      left: Math.max(4, Math.min(x, window.innerWidth - rect.width - 8)),
+      top: Math.max(4, Math.min(y, window.innerHeight - rect.height - 8)),
+    });
+  }, [x, y]);
+
+  useEffect(() => {
+    const close = () => onClose();
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('click', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="menu context-menu" style={{ left: pos.left, top: pos.top }}
+      onContextMenu={e => e.preventDefault()}>
+      {items.map((item, i) => (
+        item.separator
+          ? <hr key={`sep-${i}`} />
+          : (
+            <button key={item.label} className={item.danger ? 'danger' : ''}
+              onClick={() => { onClose(); item.onClick(); }}>
+              {item.label}{item.sub && <small>{item.sub}</small>}
+            </button>
+          )
+      ))}
+    </div>
   );
 }
 
@@ -273,10 +327,13 @@ function ResultIcons({ job, enabledPost }) {
   );
 }
 
-function JobRow({ job, selected, onSelect, enabledPost }) {
+function JobRow({ job, selected, onSelect, onContextMenu, enabledPost }) {
   const attention = job.attention?.length > 0;
   return (
-    <div className={`job-row${selected ? ' selected' : ''}${attention ? ' has-attention' : ''}`} onClick={() => onSelect(job.id)}>
+    <div className={`job-row${selected ? ' selected' : ''}${attention ? ' has-attention' : ''}`}
+      onClick={() => onSelect(job.id)}
+      onContextMenu={e => { e.preventDefault(); onContextMenu(job, e); }}
+      title="右クリックで操作メニュー">
       <div className="job-row-title" title={job.title || job.url}>{job.title || job.url}</div>
       <div className="job-row-meta">
         <StatusLabel status={job.status} />
@@ -307,7 +364,7 @@ const FILTERS = [
   { key: 'all', label: 'すべて', match: () => true, empty: 'ジョブはまだありません。「＋ 追加」から始めましょう。' },
 ];
 
-function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, enabledPost }) {
+function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, onJobContextMenu, enabledPost }) {
   const [query, setQuery] = useState('');
   const active = FILTERS.find(f => f.key === filter) || FILTERS[3];
   const q = query.trim().toLowerCase();
@@ -334,7 +391,8 @@ function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, enabledPost })
         {visible.length === 0
           ? <div className="list-empty">{q ? '該当するジョブはありません' : active.empty}</div>
           : visible.map(job => (
-            <JobRow key={job.id} job={job} selected={selectedId === job.id} onSelect={onSelect} enabledPost={enabledPost} />
+            <JobRow key={job.id} job={job} selected={selectedId === job.id} onSelect={onSelect}
+              onContextMenu={onJobContextMenu} enabledPost={enabledPost} />
           ))}
       </div>
     </aside>
@@ -573,6 +631,8 @@ function TranscriptTab({ jobId, version, notify }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [selection, setSelection] = useState(null);
+  const [menu, setMenu] = useState(null);
+  const [highlight, setHighlight] = useState('');
   const [glossaryText, setGlossaryText] = useState(null);
   const bodyRef = useRef(null);
 
@@ -582,15 +642,59 @@ function TranscriptTab({ jobId, version, notify }) {
 
   useEffect(() => { setEditing(false); setContent(null); load(); }, [load, version]);
 
-  const onMouseUp = () => {
+  const selectedWord = () => {
     const sel = window.getSelection();
-    const text = sel ? sel.toString().trim() : '';
-    if (!text || text.length > 40 || text.includes('\n') || !bodyRef.current) { setSelection(null); return; }
-    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (!sel || sel.rangeCount === 0 || !bodyRef.current) return null;
+    const range = sel.getRangeAt(0);
+    // ウィンドウが非フォーカスのとき sel.toString() は空になるため range から取る
+    const text = range.toString().trim();
+    if (!text || text.length > 40 || text.includes('\n')) return null;
+    if (!bodyRef.current.contains(range.commonAncestorContainer)) return null;
+    return { range, text };
+  };
+
+  const showSelectionButton = () => {
+    const picked = selectedWord();
+    if (!picked) { setSelection(null); return; }
+    const rect = picked.range.getBoundingClientRect();
     const scroller = bodyRef.current.closest('.tab-body');
     const base = scroller.getBoundingClientRect();
-    setSelection({ text, top: rect.bottom - base.top + scroller.scrollTop + 6, left: rect.left - base.left + scroller.scrollLeft });
+    // 画面下端で見切れないよう、下に余裕がなければ選択範囲の上に出す
+    const below = base.bottom - rect.bottom > 48;
+    setSelection({
+      text: picked.text,
+      top: (below ? rect.bottom + 6 : rect.top - 34) - base.top + scroller.scrollTop,
+      left: Math.min(rect.left - base.left + scroller.scrollLeft, scroller.clientWidth - 240),
+    });
   };
+
+  const onContextMenu = (e) => {
+    const picked = selectedWord();
+    if (!picked || editing) return;  // 選択していないときはブラウザ標準のメニューを出す
+    e.preventDefault();
+    const text = picked.text;
+    const hits = (content.split(text).length - 1);
+    setSelection(null);
+    setMenu({
+      x: e.clientX, y: e.clientY,
+      items: [
+        { label: `「${text}」を用語辞書に登録`, sub: '次回以降の文字起こしでも自動で直ります', onClick: () => setGlossaryText(text) },
+        {
+          label: highlight === text ? 'この語の強調をやめる' : `この語を本文で探す（${hits} か所）`,
+          onClick: () => setHighlight(highlight === text ? '' : text),
+        },
+        { label: 'コピー', onClick: () => navigator.clipboard?.writeText(text).catch(() => {}) },
+      ],
+    });
+  };
+
+  // Esc で登録ボタンを閉じる
+  useEffect(() => {
+    if (!selection) return;
+    const onKey = (e) => { if (e.key === 'Escape') setSelection(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection]);
 
   const save = async () => {
     try {
@@ -605,7 +709,10 @@ function TranscriptTab({ jobId, version, notify }) {
     }
   };
 
-  const html = useMemo(() => renderMarkdown(content, { highlightReview: true }), [content]);
+  const html = useMemo(
+    () => renderMarkdown(content, { highlightReview: true, highlightTerm: highlight }),
+    [content, highlight],
+  );
 
   if (content === null) return <div className="empty-state">読み込み中…</div>;
   if (!content) return <div className="empty-state">文字起こしはまだありません。</div>;
@@ -622,13 +729,21 @@ function TranscriptTab({ jobId, version, notify }) {
         ) : (
           <>
             <button onClick={() => { setDraft(content); setEditing(true); setSelection(null); }}>直接編集</button>
-            <span className="hint">誤認識した言葉を<b>マウスで選択</b>すると、用語辞書に登録してまとめて直せます。<mark className="review" style={{ background: 'var(--warn-soft)', color: 'inherit' }}>黄色</mark>は要確認箇所です。</span>
+            {highlight && <button onClick={() => setHighlight('')}>「{highlight}」の強調を消す</button>}
+            <span className="hint">誤認識した言葉を<b>選択</b>すると、用語辞書に登録できます（<b>右クリック</b>で検索・コピーも）。<mark className="review" style={{ background: 'var(--warn-soft)', color: 'inherit' }}>黄色</mark>は要確認箇所です。</span>
           </>
         )}
       </div>
       {editing
         ? <textarea className="edit-area" value={draft} onChange={e => setDraft(e.target.value)} />
-        : <div ref={bodyRef} className="markdown" onMouseUp={onMouseUp} dangerouslySetInnerHTML={{ __html: html }} />}
+        : (
+          <div ref={bodyRef} className="markdown"
+            onMouseUp={showSelectionButton}
+            onTouchEnd={() => setTimeout(showSelectionButton, 0)}
+            onContextMenu={onContextMenu}
+            dangerouslySetInnerHTML={{ __html: html }} />
+        )}
+      {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
       {selection && !editing && (
         <button className="selection-pop" style={{ top: selection.top, left: selection.left }}
           onMouseDown={e => e.preventDefault()}
@@ -1326,6 +1441,8 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [showHelp, setShowHelp] = useState(() => !storageGet('transcribe.helpSeen', false));
+  const [jobMenu, setJobMenu] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [darkMode, setDarkMode] = useState(() => storageGet('transcribe.dark', true));
   const filterInitialized = useRef(false);
 
@@ -1401,6 +1518,64 @@ function App() {
   const selectedJob = jobs.find(j => j.id === selectedJobId);
 
   const openJob = (id) => { setSelectedJobId(id); setView('job'); };
+
+  const runTask = async (path, body, message) => {
+    try {
+      await postJson(path, body);
+      notify(message, 'success');
+      fetchJobs();
+    } catch (e) {
+      notify(`実行できませんでした: ${e.message}`, 'error');
+    }
+  };
+
+  // 一覧の右クリックメニュー（詳細を開かずに操作できる）
+  const openJobMenu = (job, e) => {
+    const attention = job.attention?.length > 0;
+    const items = [{ label: '開く', onClick: () => openJob(job.id) }];
+
+    if (job.status === 'failed') {
+      items.push({ label: '失敗したところから再開', onClick: () => runTask('/api/retry', { job_id: job.id }, '失敗したところから再開します') });
+    } else if (job.status === 'done' && attention) {
+      items.push({ label: '後処理をやり直す', onClick: () => runTask('/api/resume-post', { job_id: job.id }, '後処理をやり直します') });
+    }
+
+    if (job.status === 'done') {
+      if (enabledPost.includes('summarize')) {
+        items.push({
+          label: 'まとめを作り直す', sub: 'AI の API を再度呼び出します',
+          onClick: () => setConfirmAction({
+            title: `ジョブ #${job.id} のまとめを作り直しますか？`,
+            message: '現在の文字起こしからまとめを作り直します。AI の利用料金が発生します。',
+            confirmLabel: '作り直す',
+            run: () => runTask('/api/summarize', { job_id: job.id }, 'まとめを作り直します'),
+          }),
+        });
+      }
+      if (job.notion_url) {
+        items.push({ label: 'Notion で開く', onClick: () => window.open(job.notion_url, '_blank', 'noopener') });
+      }
+      if (/^https?:\/\//.test(job.url)) {
+        items.push({ label: '元の動画を開く', onClick: () => window.open(job.url, '_blank', 'noopener') });
+      }
+    }
+
+    items.push({ separator: true });
+    items.push({
+      label: '削除', danger: true,
+      onClick: () => setConfirmAction({
+        title: `ジョブ #${job.id} を削除しますか？`,
+        message: '一覧から削除します。Notion / Docs に登録済みのページは削除されません。',
+        confirmLabel: '削除', danger: true,
+        run: async () => {
+          await runTask('/api/delete', { job_id: job.id, files: false }, '削除しました');
+          if (selectedJobId === job.id) { setSelectedJobId(null); setView('add'); }
+        },
+      }),
+    });
+
+    setJobMenu({ x: e.clientX, y: e.clientY, items });
+  };
   const cancelTask = async (taskId) => {
     try {
       await postJson(`/api/tasks/${taskId}/cancel`);
@@ -1452,13 +1627,20 @@ function App() {
       )}
       <main className="app-main">
         <Sidebar jobs={jobs} filter={filter} setFilter={setFilter} selectedId={view === 'job' ? selectedJobId : null}
-          onSelect={openJob} enabledPost={enabledPost} />
+          onSelect={openJob} onJobContextMenu={openJobMenu} enabledPost={enabledPost} />
         <section className="main-content">
           {content}
           <LogPanel logs={logs} />
         </section>
       </main>
       <Toasts toasts={toasts} />
+      {jobMenu && <ContextMenu {...jobMenu} onClose={() => setJobMenu(null)} />}
+      {confirmAction && (
+        <ConfirmModal title={confirmAction.title} confirmLabel={confirmAction.confirmLabel} danger={confirmAction.danger}
+          onClose={() => setConfirmAction(null)} onConfirm={confirmAction.run}>
+          {confirmAction.message}
+        </ConfirmModal>
+      )}
       {showHelp && <HelpModal onClose={closeHelp} />}
     </div>
   );

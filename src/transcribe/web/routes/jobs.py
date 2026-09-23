@@ -30,6 +30,20 @@ def _read_meta(output_dir: str | None) -> dict:
         return {}
 
 
+def _notion_url(output_dir: str | None) -> str | None:
+    """同期済みの Notion ページ URL（出力フォルダの notion.json に保存されている）。"""
+    if not output_dir:
+        return None
+    path = Path(output_dir) / "notion.json"
+    if not path.exists():
+        return None
+    try:
+        page_id = json.loads(path.read_text(encoding="utf-8")).get("page_id", "")
+    except Exception:
+        return None
+    return f"https://www.notion.so/{page_id.replace('-', '')}" if page_id else None
+
+
 def _attention(job: dict, stages: dict, enabled_post: list[str]) -> list[str]:
     """ユーザーの対応が必要な理由（一覧の「要対応」判定に使う）。"""
     reasons: list[str] = []
@@ -68,6 +82,7 @@ async def list_jobs(cfg: ConfigDep):
         job["summary_truncated"] = bool(
             job["output_dir"] and (Path(job["output_dir"]) / "summary.truncated.md").exists()
         )
+        job["notion_url"] = _notion_url(job["output_dir"])
         job["in_progress"] = job["status"] in _IN_PROGRESS or job["status"] == "queued"
         job["progress"] = stages.get("transcribe", {}).get("progress") if job["status"] == "transcribing" else None
         job["attention"] = _attention(job, stages, enabled_post)
@@ -85,13 +100,7 @@ async def get_job(job_id: int, cfg: ConfigDep):
     job["has_transcript"] = bool(out and (out / "transcript.md").exists())
     job["has_summary"] = bool(out and (out / "summary.md").exists())
     job["summary_truncated"] = bool(out and (out / "summary.truncated.md").exists())
-    job["notion_url"] = None
-    if out and (out / "notion.json").exists():
-        try:
-            page_id = json.loads((out / "notion.json").read_text(encoding="utf-8")).get("page_id", "")
-            job["notion_url"] = f"https://www.notion.so/{page_id.replace('-', '')}" if page_id else None
-        except Exception:
-            pass
+    job["notion_url"] = _notion_url(job["output_dir"])
     return job
 
 
