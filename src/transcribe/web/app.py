@@ -41,9 +41,18 @@ app.include_router(files.router, prefix="/api")
 app.include_router(glossary_router, prefix="/api")
 app.include_router(log_stream.router)
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class _NoCacheStaticFiles(StaticFiles):
+    """静的ファイルを毎回検証させる（更新したのに古い画面が出るのを防ぐ）。"""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", _NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
