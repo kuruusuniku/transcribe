@@ -156,6 +156,36 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* 境界にホバーすると現れる開閉ハンドル（本文に集中したいときに隠す） */
+    .collapse-handle {
+      position: relative;
+      height: 5px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .collapse-handle.is-hidden { height: 7px; }
+    .collapse-handle:hover { background: var(--btn-hover); }
+    .collapse-handle button {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      height: 18px;
+      padding: 0 10px;
+      font-size: 9px;
+      line-height: 1;
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--text-dim);
+      opacity: 0;
+      transition: opacity 0.12s ease;
+      z-index: 15;
+    }
+    .collapse-handle:hover button,
+    .collapse-handle button:focus-visible { opacity: 1; }
+    .collapse-handle .handle-label { margin-left: 4px; font-size: 10px; }
+
     .offline-banner {
       background: var(--failed-soft);
       border-bottom: 1px solid var(--failed);

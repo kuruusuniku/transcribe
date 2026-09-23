@@ -230,6 +230,17 @@ function ContextMenu({ x, y, items, onClose }) {
   );
 }
 
+function CollapseHandle({ hidden, onToggle, label }) {
+  return (
+    <div className={`collapse-handle${hidden ? ' is-hidden' : ''}`}>
+      <button onClick={onToggle} title={`${label}を${hidden ? '表示' : '隠す'}`}
+        aria-label={`${label}を${hidden ? '表示' : '隠す'}`}>
+        {hidden ? '▼' : '▲'}{hidden && <span className="handle-label">{label}</span>}
+      </button>
+    </div>
+  );
+}
+
 function Toasts({ toasts }) {
   return (
     <div className="toasts">
@@ -261,7 +272,8 @@ function HelpModal({ onClose }) {
         <dt>最初からやり直す</dt><dd>ダウンロードから全部やり直します。設定を変えて作り直したいとき用です。</dd>
       </dl>
       <p style={{ marginTop: 12, color: 'var(--text-dim)' }}>
-        ショートカット: <kbd>Ctrl</kbd>+<kbd>B</kbd> 一覧の開閉／<kbd>/</kbd> 検索／<kbd>Esc</kbd> 閉じる。
+        ショートカット: <kbd>Ctrl</kbd>+<kbd>B</kbd> 一覧の開閉／<kbd>Shift</kbd>+<kbd>F</kbd> 集中モード／<kbd>/</kbd> 検索／<kbd>Esc</kbd> 閉じる。
+        区切り線にマウスを乗せると出る <kbd>▲</kbd> で、メニューやジョブ情報を隠せます。
         文字起こしでは語句を選んで<b>右クリック</b>すると、用語辞書への登録・本文の検索ができます。
       </p>
       <p style={{ marginTop: 8, color: 'var(--text-dim)' }}>設定が正しいかは右上の「設定状況」で確認できます。コマンドラインでは <code>uv run transcribe doctor</code> でも確認できます。</p>
@@ -337,8 +349,8 @@ function JobRow({ job, selected, onSelect, onContextMenu, enabledPost }) {
     <div className={`job-row${selected ? ' selected' : ''}${attention ? ' has-attention' : ''}`}
       onClick={() => onSelect(job.id)}
       onContextMenu={e => { e.preventDefault(); onContextMenu(job, e); }}
-      title="右クリックで操作メニュー">
-      <div className="job-row-title" title={job.title || job.url}>{job.title || job.url}</div>
+      title={`${job.title || job.url}\n\n右クリックで操作メニュー`}>
+      <div className="job-row-title">{job.title || job.url}</div>
       <div className="job-row-meta">
         <StatusLabel status={job.status} />
         <span>#{job.id}</span>
@@ -858,6 +870,9 @@ function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [deleteFiles, setDeleteFiles] = useState(false);
+  const [headHidden, setHeadHidden] = useState(() => storageGet('transcribe.detailHeadHidden', false));
+
+  useEffect(() => { storageSet('transcribe.detailHeadHidden', headHidden); }, [headHidden]);
   const version = listJob?.updated_at;
 
   useEffect(() => { storageSet('transcribe.detailTab', tab); }, [tab]);
@@ -901,6 +916,7 @@ function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
 
   return (
     <div className="detail">
+      {!headHidden && (
       <div className="detail-head">
         <div className="detail-title-row">
           <StatusLabel status={job.status} />
@@ -981,6 +997,8 @@ function JobView({ jobId, listJob, enabledPost, notify, onChanged, onClosed }) {
           </div>
         )}
       </div>
+      )}
+      <CollapseHandle hidden={headHidden} onToggle={() => setHeadHidden(h => !h)} label="ジョブ情報" />
 
       <div className="tabs">
         <button className={`tab${tab === 'summary' ? ' active' : ''}`} onClick={() => setTab('summary')}>まとめ</button>
@@ -1448,6 +1466,7 @@ function App() {
   const [toasts, setToasts] = useState([]);
   const [showHelp, setShowHelp] = useState(() => !storageGet('transcribe.helpSeen', false));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => storageGet('transcribe.sidebarCollapsed', false));
+  const [headerHidden, setHeaderHidden] = useState(() => storageGet('transcribe.headerHidden', false));
   const [jobMenu, setJobMenu] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [darkMode, setDarkMode] = useState(() => storageGet('transcribe.dark', true));
@@ -1460,6 +1479,7 @@ function App() {
   }, [darkMode]);
 
   useEffect(() => { storageSet('transcribe.sidebarCollapsed', sidebarCollapsed); }, [sidebarCollapsed]);
+  useEffect(() => { storageSet('transcribe.headerHidden', headerHidden); }, [headerHidden]);
 
   // キーボードショートカット（入力中は無効）
   useEffect(() => {
@@ -1476,10 +1496,16 @@ function App() {
         setSidebarCollapsed(false);
         setTimeout(() => searchRef.current?.focus(), 0);
       }
+      if (e.key.toLowerCase() === 'f' && e.shiftKey) {
+        // 集中モード: 一覧・ヘッダーをまとめて開閉
+        const hide = !(sidebarCollapsed && headerHidden);
+        setSidebarCollapsed(hide);
+        setHeaderHidden(hide);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [sidebarCollapsed, headerHidden]);
 
   const notify = useCallback((text, kind = 'info') => {
     const id = Math.random();
@@ -1637,6 +1663,7 @@ function App() {
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      {!headerHidden && (
       <header className="app-header">
         <button className="icon-btn" onClick={() => setSidebarCollapsed(c => !c)}
           title={`ジョブ一覧を${sidebarCollapsed ? '開く' : '閉じる'}（Ctrl+B）`}
@@ -1653,6 +1680,8 @@ function App() {
         <button onClick={() => setShowHelp(true)} title="使い方">？ 使い方</button>
         <button className="ghost" onClick={() => setDarkMode(d => !d)} title="表示テーマの切り替え">{darkMode ? '☀️' : '🌙'}</button>
       </header>
+      )}
+      <CollapseHandle hidden={headerHidden} onToggle={() => setHeaderHidden(h => !h)} label="メニュー" />
       {offline && (
         <div className="offline-banner">
           ⚠ {OFFLINE_MESSAGE} 起動すると自動で再接続します。
