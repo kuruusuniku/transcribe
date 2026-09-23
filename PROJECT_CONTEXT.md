@@ -1,14 +1,20 @@
 # PROJECT_CONTEXT
 
-**最終更新日**: 2026-05-29
+**最終更新日**: 2026-09-23
 
-YouTube限定公開動画（武術稽古指導の録画）をローカルGPUで自動文字起こしし、まとめ生成・Google Docs 同期まで一気通貫で行うツール。
+体育指導の YouTube 限定公開動画と、叡智講義の録音ファイルをローカル GPU で自動文字起こしし、
+まとめ生成・Notion / Google Docs 同期まで一気通貫で行うツール。
+
+| 素材 | 扱い | まとめプロンプト | Notion 登録先 |
+|---|---|---|---|
+| YouTube URL | 体育指導の動画 | `SYSTEM_PROMPT_BASE` | 体育動画まとめDB（`notion.database_id`） |
+| 録音ファイル（mp3 / m4a） | 叡智講義 | `LECTURE_SYSTEM_PROMPT` | 叡智まとめDB（`notion.local_database_id`） |
 
 ---
 
 ## 1. 概要
 
-- 1日1本、約1時間の動画を夜間バッチで処理 → 翌朝確認
+- 1日1本、約1時間の動画・講義を処理（Web UI から随時、または夜間バッチ）→ 翌朝確認
 - ローカル GPU（GTX 1050 Ti Max-Q, VRAM 4GB）で faster-whisper large-v3 を動かす
 - BGM が乗った状態でも稽古指導音声を正確に書き起こす
 - 武術独自用語（中足靭帯、臍下丹田、八つの心得 など）に対応
@@ -55,6 +61,7 @@ YouTube限定公開動画（武術稽古指導の録画）をローカルGPUで�
 transcribe/
 ├── pyproject.toml
 ├── README.md
+├── GETTING_STARTED.md / TROUBLESHOOTING.md / USAGE.md
 ├── config.yaml / config.example.yaml
 ├── glossary.yaml
 ├── urls.txt              # URL とローカルパスの混在可
@@ -62,12 +69,15 @@ transcribe/
 ├── token.json            # Google OAuth トークン（gitignore）
 ├── data/
 │   ├── state.db
-│   ├── work/
-│   └── output/{YYYY-MM-DD}_{video_id or filename_stem}/
+│   ├── work/             # ダウンロード音声・文字起こしキャッシュ（<video_id>.whisper.json）
+│   ├── uploads/{uuid}/   # Web UI からアップロードした録音ファイル
+│   └── output/{YYYY-MM-DD}_{video_id or filename_stem_hash}/
 │       ├── transcript.md
 │       ├── summary.md         # LLM 自動まとめ
+│       ├── summary.truncated.md  # 上限切れで復旧できなかった場合のみ
 │       ├── segments.json
-│       └── meta.json
+│       ├── meta.json
+│       └── notion.json        # 同期先 DB とページ ID
 ├── logs/{YYYY-MM-DD}.log
 ├── src/transcribe/
 │   ├── __init__.py
@@ -79,7 +89,10 @@ transcribe/
 │   ├── postprocess.py
 │   ├── utils.py
 │   ├── sync.py           # Google Docs 同期（OAuth + Drive API）
-│   ├── summarize.py      # LLM 自動カスタムまとめ（Gemini/Claude）
+│   ├── summarize.py      # LLM 自動カスタムまとめ（体育指導 / 叡智講義の 2 プロンプト・崩れ復旧・時刻補正）
+│   ├── notion_sync.py    # Notion 同期（DB プロパティ構成に合わせて送信）
+│   ├── notify.py         # バッチ完了メール（Gmail API）
+│   ├── health.py         # 設定・連携の診断（doctor / 設定状況）
 │   ├── stages/
 │   │   ├── downloader.py
 │   │   ├── separator.py
@@ -91,7 +104,8 @@ transcribe/
 │       ├── worker.py         # 単一ワーカースレッドで CLI コマンドをインプロセス実行（Whisper モデル常駐）
 │       ├── output_router.py  # ワーカースレッドの stdout/stderr をタスクログに振り分け
 │       ├── security.py       # Origin チェック・トークン認証ミドルウェア
-│       ├── deps.py           # get_config() 依存関数
+│       ├── deps.py           # get_config()（config.yaml の更新を自動反映）
+│       ├── glossary_path.py  # glossary.yaml のパス
 │       ├── routes/
 │       │   ├── jobs.py       # ジョブ一覧・詳細・閲覧 API
 │       │   ├── commands.py   # run/sync/summarize/rerun API
@@ -106,17 +120,27 @@ transcribe/
 │   ├── migrate_notion_pages.py  # Notion 既存ページ → DB 一括移行
 │   └── patch_notion_db.py       # Notion DB レコード補完パッチ
 └── tests/
-    ├── test_local_file.py     # 37件
+    ├── conftest.py            # Notion のプロパティ取得を既定で無効化（実ネットワーク禁止）
+    ├── test_clean.py          # 一時ファイル削除
+    ├── test_delete.py
+    ├── test_downloader.py
+    ├── test_formatter.py      # 区切り方・ヘッダー・reformat
+    ├── test_local_file.py
+    ├── test_notify.py
+    ├── test_notion_sync.py
     ├── test_pipeline_retry.py
     ├── test_postprocess.py
     ├── test_rerun.py
     ├── test_separator.py
-    ├── test_summarize.py      # 34件
-    ├── test_sync.py           # 19件
-    └── test_web.py            # 18件
+    ├── test_stages.py         # ステージ記録・文字起こしキャッシュ
+    ├── test_summarize.py
+    ├── test_sync.py
+    ├── test_utils.py          # URL 正規化・時刻整形
+    ├── test_web.py
+    └── test_worker.py         # インプロセス実行・タスク取り消し
 ```
 
-**テスト総数**: 198件（全パス）
+**テスト総数**: 294件（2026-09-23 時点）
 
 ---
 
@@ -214,27 +238,68 @@ transcribe/
 - `--mode copy-blocks`: 元まとめサブページの本文ブロックを DB レコードに一括コピー（85件対応）
 - link_preview mention → テキストリンク変換、table ブロックの children 自動付加、rich_text 100件超の自動分割など Notion API 制約を吸収
 
+### 14. 堅牢性の強化（completed / 2026-09）
+- 複数プロセスの同時実行をファイルロックで直列化（同じジョブの二重処理を防止）
+- YouTube URL を `watch?v=ID` に正規化して重複ジョブを防止／録音ファイルは内容ハッシュ（`jobs.content_hash`）で二重登録を防止
+- Whisper の生出力を `work_dir/<video_id>.whisper.json` にキャッシュし、後段の失敗時のリトライで再文字起こしを回避
+- SQLite を WAL 化・ロック待ち 30 秒
+- まとめの出力上限切れ（`SummaryTruncatedError`）と出力の崩れ（同じ文字の連続・文書の繰り返し）を検出し、可能なら復旧
+- Notion ページ更新を「新ブロック追加 → 成功後に旧ブロック削除」に変更
+
+### 15. ステージ単位の状態管理（completed / 2026-09）
+- `job_stages` テーブル（job_id, stage, status, attempts, error, progress, started_at, finished_at）
+  - 本体: download / separate / transcribe / format
+  - 後処理: summarize / docs_sync / notion_sync（done / skipped / failed）
+- 文字起こしの進捗率を記録（Web UI の進捗バー・残り時間の推定に使用）
+- `transcribe status --id N` と `GET /api/jobs/{id}/stages`
+- `transcribe resume-post <id>`：失敗・未実行の後処理だけをやり直す
+
+### 16. Web UI の全面再構成（completed / 2026-09）
+- サブプロセス実行をやめ、Web サーバー内の単一ワーカースレッド（`web/worker.py`）で CLI コマンドをインプロセス実行
+  - 同時実行は常に 1 件。Whisper モデルをタスク間で再利用し、10 分アイドルで解放
+  - ワーカースレッドの stdout/stderr のみタスクログへ振り分け（`web/output_router.py`）
+  - 待機中タスクの取り消しに対応
+- 画面を「入れる → 待つ → 要対応だけ確認する」の流れに再構成
+  - 一覧: 要対応 / 処理中 / 完了 / すべて、種別ラベル（体育動画 / 叡智講義）、進捗・残り時間
+  - 詳細: 状態に応じた主ボタン、ステージ表示、まとめ / 文字起こし / 処理の記録タブ
+  - 文字起こしで語句を選択 → 用語辞書に登録（その場で反映＋次回以降も自動修正）
+  - 設定状況（`health.py`）・使い方ガイド・折りたたみログ
+- アクセス制御（`web/security.py`）: Origin チェックと `web.token` によるトークン認証
+
+### 17. 叡智講義対応・時刻の正確化（completed / 2026-09）
+- 録音ファイルを叡智講義として講義用プロンプトでまとめ、叡智まとめDB に登録
+- Notion の DB プロパティ構成を取得し、存在するプロパティだけ書き込む（DB ごとの差異を吸収）
+- 書き起こしの見出しを「実際に話し始めた時刻」に変更（`group_segments`）。区切りは最大 30 秒＋無音 1 秒
+- まとめ内の時刻を実在のセグメント開始時刻へ補正し、YouTube リンクの `t=` も貼り直す
+- `transcribe reformat <id>`：再文字起こしなしで `segments.json` から書き起こしを作り直す
+
 ---
 
 ## 6. 本運用フェーズの状況
 
-`transcribe run` 1コマンドで以下が自動実行される:
+Web UI の「＋ 追加」に URL / 録音ファイルを入れると、以下が自動実行される（`transcribe run` でも同じ）:
 
-1. YouTube 動画ダウンロード or ローカルファイルコピー
-2. faster-whisper で文字起こし → postprocess → `transcript.md`
-3. Gemini 2.5 Flash で構造化まとめ → `summary.md`
-4. Google Docs に `transcript.md` + `summary.md` を同期
+1. YouTube 動画ダウンロード or 録音ファイルの読み込み
+2. faster-whisper で文字起こし → postprocess → `transcript.md` / `segments.json` / `meta.json`
+3. Gemini 2.5 Flash で構造化まとめ（素材に応じたプロンプト）→ `summary.md`
+4. Notion（体育動画まとめDB / 叡智まとめDB）と Google Docs に同期
+5. バッチ完了時に結果サマリーメール（`notification`）
 
-各ステップは best-effort で、後段の失敗は前段の成果物を残したまま完了する設計。
+各ステップは best-effort で、後段の失敗は前段の成果物を残したまま完了する。
+失敗は `job_stages` に記録され、Web UI の「要対応」と「後処理をやり直す」で復旧する。
 
 ---
 
 ## 7. 次フェーズ / PENDING
 
-- glossary 6回目の確認待ち用語（約 20 件、`t-UHRZTt7Ag`）
+- 叡智まとめDB の「カテゴリー」の決め方が未定（現在は空欄で登録）
+- 叡智講義の日付は元データに無い。ファイル名先頭の日付（例 `250430_講義.mp3`）からのみ設定される
+- 叡智まとめの「タグ」は主要キーワードを使用。`Downloads/eichi_matome_extension.sql` にある
+  太陽系叡智系譜図（21 ノード）のタグ体系は仮案のため**ノータッチ**（叡智まとめの後続フェーズで検討）
+- 旧形式のまま残っているジョブ（約 20 件）の `reformat` + まとめ作り直しは未実施
+- 録音ファイルの Notion 重複判定は出力フォルダの `notion.json` に依存（フォルダ削除で重複作成の可能性）
+- Demucs のモデルキャッシュは VRAM 4GB のため見送り
 - WhisperX 対応（単語単位タイムスタンプ、優先度低）
-  - `config.yaml` の `backend: faster-whisper or whisperx` で切り替え可能にする
-  - `transcriber.py` をディスパッチャ化 → `backends/` に分割
 
 ---
 
@@ -246,11 +311,14 @@ transcribe/
 - `youtube` — cookies_from_browser
 - `audio_separation` — enabled, model, device
 - `transcription` — model, compute_type, device, language, beam_size, vad_filter
-- `output` — timestamp_interval_seconds, confidence_threshold
+- `output` — timestamp_interval_seconds（1 区切りの最大の長さ・既定 30 秒）, paragraph_gap_seconds, segment_timestamps, confidence_threshold
 - `retry` — max_attempts, backoff_seconds
-- `logging` — level, console, file
+- `logging` — level, console, file, retention_days
 - `google_docs` — enabled, credentials_path, token_path, root_folder_id
-- `summarize` — enabled, provider, gemini_api_key, gemini_model, anthropic_api_key, anthropic_model, max_output_tokens, temperature
+- `summarize` — enabled, provider, gemini_api_key, gemini_model, anthropic_api_key, anthropic_model, max_output_tokens（既定 16384）, temperature
+- `notion` — enabled, token, database_id（体育動画）, local_database_id（叡智講義）
+- `web` — host, port, token（設定するとトークン認証。127.0.0.1 以外では必須）
+- `notification` — enabled, to_email
 
 ---
 
@@ -273,17 +341,21 @@ transcribe/
 - Gemini 無料枠は高負荷時に 503 が出ることがある（再実行で回復）
 - summarize / sync の失敗はジョブ全体を失敗にしない（best-effort）
 - Web UI は `uv run transcribe web` で起動、http://localhost:8000 でアクセス
-- 外部公開する場合は `--host 0.0.0.0`（セキュリティリスクあり、チーム共有時は Next.js 分離構成を推奨）
+- 外部公開する場合は `web.token` の設定が必須（未設定では 127.0.0.1 以外で起動しない）
+- Web サーバーのワーカー内ではブラウザ認証を開始しない（`TRANSCRIBE_WEB_SERVER=1`）。
+  Google の再認証が必要になったら CLI で `uv run transcribe sync` を実行する
+- Web UI を起動している間は Whisper モデルを最大 10 分保持するため、他の GPU アプリと併用しない
+- 設定の確認は `uv run transcribe doctor [--test]`（Web UI では「設定状況」）
 
 ---
 
-## 11. 直近のコミット履歴
+## 11. ドキュメント構成
 
-- `feat: NotionDBレコードに元まとめページの本文ブロックを一括コピー`
-- `feat: Notionタグ抽出をメソッド種別・指導対象の身体部位にも拡張`
-- `feat: ファビコンを追加`
-- `fix: 日本語ファイル名によるContent-Dispositionのlatin-1エンコードエラーを修正`
-- `feat: 変換保存先をIndexedDBで永続化・showDirectoryPickerのstartIn対応`
-- `feat: D&Dエリアと変換キュー・File System Access APIによる保存先指定を追加`
-- `feat: m4a→mp3変換を複数ファイル・フォルダ選択に対応`
-- `feat: Notion同期時に主要キーワードをタグとして自動反映`
+| 読み手 | ファイル |
+|---|---|
+| 使う人（まずここ） | `GETTING_STARTED.md` |
+| うまく動かないとき | `TROUBLESHOOTING.md` |
+| コマンド・設定のリファレンス | `USAGE.md` |
+| 開発の経緯・構成（本ファイル） | `PROJECT_CONTEXT.md` |
+| 開発上の注意点 | `HANDOVER.md` |
+| 初期構築時の指示書（歴史的資料） | `CLAUDE_CODE_PROMPT.md` |

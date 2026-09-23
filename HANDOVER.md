@@ -12,6 +12,10 @@
 
 ### Notion 連携の注意点
 - notion-client v3.1.0（最新）は `databases.query()` が未実装
+- notion-client の `databases.retrieve()` は新しい API バージョンで `properties` を返さない。
+  DB のプロパティ構成は `_fetch_db_schema()`（httpx + `Notion-Version: 2022-06-28`）で取得している
+- DB ごとにプロパティ構成が違う（体育動画まとめDB は URL / ソース種別 / 動画時間、叡智まとめDB は
+  音声時間 / カテゴリー）。`_fit_properties_to_schema()` で存在するプロパティだけ送る
 - DB クエリは httpx で直接 Notion API を叩いている
 - httpx による直接呼び出しのデメリット：
   - `Notion-Version: 2022-06-28` をハードコード済み。Notion が API バージョンを更新したら手動対応が必要
@@ -20,6 +24,22 @@
 - デメリットへの対策：
   - Notion-Version: Notion の API 更新通知を購読するか、定期的に確認する（https://developers.notion.com/changelog）
   - エラーハンドリング・リトライ: 必要になったら `_call_with_retry()` と同じパターンで追加可能
+
+### Web UI（インプロセス実行）の注意点
+- Web UI のコマンドはサブプロセスではなく、サーバー内のワーカースレッドで CLI を直接呼ぶ
+  （`web/worker.py`）。コードを変更したらサーバーの再起動が必要
+- ワーカーは常に 1 件ずつ実行。ブラウザ認証のような「入力待ち」を発生させる処理を
+  ワーカー内で始めるとキュー全体が止まるため、`TRANSCRIBE_WEB_SERVER=1` のときは
+  認証フローを開始せず `ReauthRequiredError` を投げる
+- 標準出力の振り分け（`web/output_router.py`）は `transcribe web` 起動時のみ有効。
+  テストや `uvicorn` 直起動では働かない
+
+### テストの注意点
+- `tests/conftest.py` の autouse fixture が Notion の DB プロパティ取得を無効化している
+  （実ネットワークに出ないようにするため）。構成に合わせる挙動を検証するテストは
+  内側で `_get_db_schema` を patch する
+- ヒアドキュメント経由で Python を実行すると `\n` や `\1` が展開されることがある。
+  エスケープを含む編集は Edit ツールかスクリプトファイル経由で行う
 
 ### GPU依存モジュールのテストについて
 - torch/torchaudio/demucs を使うテストは実行時に CUDA 初期化で固まる可能性がある
