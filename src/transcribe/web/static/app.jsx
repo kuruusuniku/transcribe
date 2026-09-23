@@ -230,12 +230,13 @@ function ContextMenu({ x, y, items, onClose }) {
   );
 }
 
-function CollapseHandle({ hidden, onToggle, label }) {
+function CollapseHandle({ hidden, onToggle, label, vertical = false, shortcut = '' }) {
+  const mark = vertical ? (hidden ? '▶' : '◀') : (hidden ? '▼' : '▲');
+  const action = `${label}を${hidden ? '表示' : '隠す'}${shortcut ? `（${shortcut}）` : ''}`;
   return (
-    <div className={`collapse-handle${hidden ? ' is-hidden' : ''}`}>
-      <button onClick={onToggle} title={`${label}を${hidden ? '表示' : '隠す'}`}
-        aria-label={`${label}を${hidden ? '表示' : '隠す'}`}>
-        {hidden ? '▼' : '▲'}{hidden && <span className="handle-label">{label}</span>}
+    <div className={`collapse-handle${vertical ? ' vertical' : ''}${hidden ? ' is-hidden' : ''}`}>
+      <button onClick={onToggle} title={action} aria-label={action}>
+        {mark}{hidden && !vertical && <span className="handle-label">{label}</span>}
       </button>
     </div>
   );
@@ -1575,6 +1576,29 @@ function App() {
 
   const openJob = (id) => { setSelectedJobId(id); setView('job'); };
 
+  // ハンバーガー = アプリ全体のメニュー
+  const openAppMenu = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const zen = sidebarCollapsed && headerHidden;
+    setJobMenu({
+      x: rect.left, y: rect.bottom + 4,
+      items: [
+        { label: '＋ 素材を追加', onClick: () => go('add') },
+        { separator: true },
+        { label: '用語辞書', onClick: () => go('glossary') },
+        { label: 'ツール', onClick: () => go('tools') },
+        { label: `設定状況${healthErrors > 0 ? '（要確認）' : ''}`, danger: healthErrors > 0, onClick: () => go('settings') },
+        { separator: true },
+        { label: `ジョブ一覧を${sidebarCollapsed ? '表示' : '隠す'}`, onClick: () => setSidebarCollapsed(c => !c) },
+        { label: `上部メニューを${headerHidden ? '表示' : '隠す'}`, onClick: () => setHeaderHidden(h => !h) },
+        { label: zen ? '集中モードを解除' : '集中モード', onClick: () => { setSidebarCollapsed(!zen); setHeaderHidden(!zen); } },
+        { label: darkMode ? 'ライト表示にする' : 'ダーク表示にする', onClick: () => setDarkMode(d => !d) },
+        { separator: true },
+        { label: '使い方', onClick: () => setShowHelp(true) },
+      ],
+    });
+  };
+
   const runTask = async (path, body, message) => {
     try {
       await postJson(path, body);
@@ -1665,19 +1689,18 @@ function App() {
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       {!headerHidden && (
       <header className="app-header">
-        <button className="icon-btn" onClick={() => setSidebarCollapsed(c => !c)}
-          title={`ジョブ一覧を${sidebarCollapsed ? '開く' : '閉じる'}（Ctrl+B）`}
-          aria-label={`ジョブ一覧を${sidebarCollapsed ? '開く' : '閉じる'}`}>☰</button>
+        <button className="icon-btn" onClick={e => { e.stopPropagation(); openAppMenu(e); }}
+          title="メニュー" aria-label="メニュー">
+          ☰{healthErrors > 0 && <span className="dot" />}
+        </button>
         <span className="app-title" onClick={() => go('add')}>transcribe<small>文字起こし・まとめ</small></span>
         <button className={`nav-btn${view === 'add' ? ' active' : ''}`} onClick={() => go('add')}>＋ 追加</button>
         <QueueIndicator jobs={jobs} queue={queue} onOpenJob={openJob} onCancel={cancelTask} />
         <span className="header-spacer" />
         <button className={`nav-btn${view === 'glossary' ? ' active' : ''}`} onClick={() => go('glossary')} title="誤認識しやすい言葉の登録">用語辞書</button>
-        <button className={`nav-btn${view === 'tools' ? ' active' : ''}`} onClick={() => go('tools')} title="一括処理・変換など">ツール</button>
         <button className={`nav-btn${view === 'settings' ? ' active' : ''}`} onClick={() => go('settings')} title="各機能が使える状態か確認">
           {healthErrors > 0 && <span className="dot" />}設定状況
         </button>
-        <button onClick={() => setShowHelp(true)} title="使い方">？ 使い方</button>
         <button className="ghost" onClick={() => setDarkMode(d => !d)} title="表示テーマの切り替え">{darkMode ? '☀️' : '🌙'}</button>
       </header>
       )}
@@ -1691,6 +1714,8 @@ function App() {
         <Sidebar jobs={jobs} filter={filter} setFilter={setFilter} selectedId={view === 'job' ? selectedJobId : null}
           onSelect={openJob} onJobContextMenu={openJobMenu} enabledPost={enabledPost}
           collapsed={sidebarCollapsed} searchRef={searchRef} />
+        <CollapseHandle vertical hidden={sidebarCollapsed} shortcut="Ctrl+B"
+          onToggle={() => setSidebarCollapsed(c => !c)} label="ジョブ一覧" />
         <section className="main-content">
           {content}
           <LogPanel logs={logs} />

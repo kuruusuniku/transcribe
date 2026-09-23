@@ -165,6 +165,14 @@
       border-bottom: 1px solid var(--border);
     }
     .collapse-handle.is-hidden { height: 7px; }
+    .collapse-handle.vertical {
+      height: auto;
+      width: 5px;
+      border-bottom: none;
+      border-right: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .collapse-handle.vertical.is-hidden { width: 7px; }
     .collapse-handle:hover { background: var(--btn-hover); }
     .collapse-handle button {
       position: absolute;
@@ -202,7 +210,6 @@
       width: 300px;
       flex-shrink: 0;
       background: var(--surface);
-      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       transition: width 0.18s ease, opacity 0.18s ease;
@@ -210,11 +217,12 @@
     }
     .sidebar.collapsed {
       width: 0;
-      border-right: none;
       opacity: 0;
       pointer-events: none;
     }
 
+    .icon-btn { position: relative; }
+    .icon-btn .dot { position: absolute; top: 3px; right: 3px; }
     .icon-btn {
       padding: 4px 8px;
       font-size: 15px;
