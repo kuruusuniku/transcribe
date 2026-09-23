@@ -940,7 +940,8 @@ def test_prompts_explain_timestamp_format(sample_glossary):
             video_title="t",
             source_type=source_type,
         )
-        assert "`MM:SS` の 2 つ組で書かれている場合は「分:秒」を意味する" in system
+        assert "`MM:SS` の 2 つ組の場合は「分:秒」を意味する" in system
+        assert "実在する時刻をそのまま使う" in system
 
 
 # ─── 出力の崩れ（繰り返し）の復旧 ────────────────────────────────────────

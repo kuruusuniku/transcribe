@@ -64,14 +64,16 @@ def _drop_incomplete_table(text: str) -> str:
     table = 0
     while table < len(lines) and lines[len(lines) - 1 - table].lstrip().startswith("|"):
         table += 1
-    if 0 < table < 3:  # 見出し行 + 区切り行 + データ行 1 行に満たない表は捨てる
-        del lines[len(lines) - table:]
+    if not (0 < table < 3):  # 見出し行 + 区切り行 + データ行 1 行がそろった表は残す
+        return text
+
+    del lines[len(lines) - table:]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and lines[-1].startswith("#"):
+        lines.pop()
         while lines and not lines[-1].strip():
             lines.pop()
-        if lines and lines[-1].startswith("#"):
-            lines.pop()
-            while lines and not lines[-1].strip():
-                lines.pop()
 
     return "\n".join(lines).rstrip() + "\n" if lines else text
 
@@ -134,8 +136,17 @@ def snap_timestamps(text: str, starts: list[float], *, video_id: str | None = No
         if "総時間" in line:  # 総時間は時刻ではなく長さなので触らない
             out_lines.append(line)
             continue
-        fixed = _LINKED_TIME_RE.sub(_replace_linked, line)
+        # リンク付きの時刻を先に処理し、いったん退避しておく
+        # （そのまま続けると、リンク内の時刻を裸の時刻として二重に数えてしまう）
+        parked: list[str] = []
+
+        def _park(m: re.Match) -> str:
+            parked.append(_replace_linked(m))
+            return f"\x00{len(parked) - 1}\x00"
+
+        fixed = _LINKED_TIME_RE.sub(_park, line)
         fixed = _TIME_RE.sub(_replace_bare, fixed)
+        fixed = re.sub(r"\x00(\d+)\x00", lambda m: parked[int(m.group(1))], fixed)
         out_lines.append(fixed)
     return "\n".join(out_lines) + ("\n" if text.endswith("\n") else ""), snapped
 
