@@ -230,6 +230,22 @@ function ContextMenu({ x, y, items, onClose }) {
   );
 }
 
+// スマホには右クリックがないため、長押しで同じメニューを出す
+function useLongPress(handler, ms = 500) {
+  const timer = useRef(null);
+  const clear = () => { clearTimeout(timer.current); timer.current = null; };
+  return {
+    onTouchStart: (e) => {
+      const touch = e.touches[0];
+      const fake = { clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => {}, currentTarget: e.currentTarget };
+      timer.current = setTimeout(() => { timer.current = null; handler(fake); }, ms);
+    },
+    onTouchEnd: clear,
+    onTouchMove: clear,
+    onTouchCancel: clear,
+  };
+}
+
 function CollapseHandle({ hidden, onToggle, label, vertical = false, shortcut = '' }) {
   const mark = vertical ? (hidden ? '▶' : '◀') : (hidden ? '▼' : '▲');
   const action = `${label}を${hidden ? '表示' : '隠す'}${shortcut ? `（${shortcut}）` : ''}`;
@@ -346,10 +362,12 @@ function ResultIcons({ job, enabledPost }) {
 
 function JobRow({ job, selected, onSelect, onContextMenu, enabledPost }) {
   const attention = job.attention?.length > 0;
+  const longPress = useLongPress(e => onContextMenu(job, e));
   return (
     <div className={`job-row${selected ? ' selected' : ''}${attention ? ' has-attention' : ''}`}
       onClick={() => onSelect(job.id)}
       onContextMenu={e => { e.preventDefault(); onContextMenu(job, e); }}
+      {...longPress}
       title={`${job.title || job.url}\n\n右クリックで操作メニュー`}>
       <div className="job-row-title">{job.title || job.url}</div>
       <div className="job-row-meta">
@@ -687,6 +705,8 @@ function TranscriptTab({ jobId, version, notify }) {
     });
   };
 
+  const longPress = useLongPress(e => onContextMenu(e));
+
   const onContextMenu = (e) => {
     const picked = selectedWord();
     if (!picked || editing) return;  // 選択していないときはブラウザ標準のメニューを出す
@@ -760,6 +780,7 @@ function TranscriptTab({ jobId, version, notify }) {
             onMouseUp={showSelectionButton}
             onTouchEnd={() => setTimeout(showSelectionButton, 0)}
             onContextMenu={onContextMenu}
+            {...longPress}
             dangerouslySetInnerHTML={{ __html: html }} />
         )}
       {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
@@ -1574,7 +1595,11 @@ function App() {
   const healthErrors = health.filter(c => c.status === 'error').length;
   const selectedJob = jobs.find(j => j.id === selectedJobId);
 
-  const openJob = (id) => { setSelectedJobId(id); setView('job'); };
+  const openJob = (id) => {
+    setSelectedJobId(id);
+    setView('job');
+    if (window.matchMedia('(max-width: 760px)').matches) setSidebarCollapsed(true);
+  };
 
   // ハンバーガー = アプリ全体のメニュー
   const openAppMenu = (e) => {
@@ -1716,6 +1741,9 @@ function App() {
           collapsed={sidebarCollapsed} searchRef={searchRef} />
         <CollapseHandle vertical hidden={sidebarCollapsed} shortcut="Ctrl+B"
           onToggle={() => setSidebarCollapsed(c => !c)} label="ジョブ一覧" />
+        {!sidebarCollapsed && (
+          <div className="sidebar-backdrop" onClick={() => setSidebarCollapsed(true)} aria-hidden="true" />
+        )}
         <section className="main-content">
           {content}
           <LogPanel logs={logs} />

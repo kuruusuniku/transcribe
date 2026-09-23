@@ -32,7 +32,7 @@ audio_separation:
   device: cuda
 
 transcription:
-  model: large-v3
+  model: large-v3-turbo   # large-v3 より約 3〜5 倍速い（精度はほぼ同等）。精度優先なら large-v3
   # 量子化設定（環境に応じて選択）
   # int8           : VRAM 4GB前後の旧世代GPU向け（Pascal/Turing等、Tensor Core非対応環境）
   # int8_float16   : VRAM 4-6GBのTensor Core対応GPU向け（推奨）

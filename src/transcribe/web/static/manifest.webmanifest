@@ -1,0 +1,14 @@
+{
+  "name": "transcribe 文字起こし・まとめ",
+  "short_name": "transcribe",
+  "description": "体育指導の動画と叡智講義の録音を文字起こしし、まとめを作成します",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "lang": "ja",
+  "icons": [
+    { "src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

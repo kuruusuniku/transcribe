@@ -397,11 +397,11 @@ BGM が小さい動画では `false` 推奨。有効化すると 1 時間動画�
 
 | キー | デフォルト | 説明 |
 |---|---|---|
-| `model` | `large-v3` | Whisper モデル名 |
+| `model` | `large-v3-turbo` | Whisper モデル名。`large-v3` より約 3〜5 倍速く、精度はほぼ同等（2026-09 計測）。精度優先なら `large-v3` |
 | `compute_type` | `int8_float16` | 量子化設定（`int8` / `int8_float16` / `float16` / `float32`） |
 | `device` | `cuda` | `cuda` または `cpu` |
 | `language` | `ja` | 文字起こし言語 |
-| `beam_size` | `5` | ビームサーチ幅。大きいほど高精度だが遅い |
+| `beam_size` | `5` | ビームサーチ幅。大きいほど高精度だが遅い。turbo では `1` にしても約 14% しか速くならず、用語ヒントが本文に混ざることがあるため `5` 推奨 |
 | `condition_on_previous_text` | `false` | 前テキストを文脈に使用（ハルシネーション連鎖防止のため `false` 推奨） |
 | `vad_filter` | `true` | 音声区間検出フィルタを有効化 |
 | `vad_parameters.min_silence_duration_ms` | `1000` | 無音とみなす最小区間（ms） |
