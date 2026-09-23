@@ -60,4 +60,5 @@ config.yaml
 .claude/settings.local.json
 
 # 初回認証後に自動生成されるアクセストークン
-token.jsondata/bench/
+token.json
+data/bench/
