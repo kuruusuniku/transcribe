@@ -260,7 +260,11 @@ function HelpModal({ onClose }) {
         <dt>再開</dt><dd>失敗した段階から続きを実行します（文字起こし済みならやり直しません）。</dd>
         <dt>最初からやり直す</dt><dd>ダウンロードから全部やり直します。設定を変えて作り直したいとき用です。</dd>
       </dl>
-      <p style={{ marginTop: 12, color: 'var(--text-dim)' }}>設定が正しいかは右上の「設定状況」で確認できます。コマンドラインでは <code>uv run transcribe doctor</code> でも確認できます。</p>
+      <p style={{ marginTop: 12, color: 'var(--text-dim)' }}>
+        ショートカット: <kbd>Ctrl</kbd>+<kbd>B</kbd> 一覧の開閉／<kbd>/</kbd> 検索／<kbd>Esc</kbd> 閉じる。
+        文字起こしでは語句を選んで<b>右クリック</b>すると、用語辞書への登録・本文の検索ができます。
+      </p>
+      <p style={{ marginTop: 8, color: 'var(--text-dim)' }}>設定が正しいかは右上の「設定状況」で確認できます。コマンドラインでは <code>uv run transcribe doctor</code> でも確認できます。</p>
       <div className="modal-actions"><button className="primary" onClick={onClose}>はじめる</button></div>
     </Modal>
   );
@@ -364,7 +368,7 @@ const FILTERS = [
   { key: 'all', label: 'すべて', match: () => true, empty: 'ジョブはまだありません。「＋ 追加」から始めましょう。' },
 ];
 
-function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, onJobContextMenu, enabledPost }) {
+function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, onJobContextMenu, enabledPost, collapsed, searchRef }) {
   const [query, setQuery] = useState('');
   const active = FILTERS.find(f => f.key === filter) || FILTERS[3];
   const q = query.trim().toLowerCase();
@@ -373,7 +377,7 @@ function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, onJobContextMe
     .filter(j => !q || (j.title || '').toLowerCase().includes(q) || (j.url || '').toLowerCase().includes(q));
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? ' collapsed' : ''}`} aria-hidden={collapsed}>
       <div className="sidebar-top">
         <div className="filter-tabs">
           {FILTERS.map(f => {
@@ -385,7 +389,9 @@ function Sidebar({ jobs, filter, setFilter, selectedId, onSelect, onJobContextMe
             );
           })}
         </div>
-        <input type="search" placeholder="タイトル・URL で検索" value={query} onChange={e => setQuery(e.target.value)} />
+        <input ref={searchRef} type="search" placeholder="タイトル・URL で検索（/）" value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur(); } }} />
       </div>
       <div className="job-list">
         {visible.length === 0
@@ -678,9 +684,9 @@ function TranscriptTab({ jobId, version, notify }) {
     setMenu({
       x: e.clientX, y: e.clientY,
       items: [
-        { label: `「${text}」を用語辞書に登録`, sub: '次回以降の文字起こしでも自動で直ります', onClick: () => setGlossaryText(text) },
+        { label: '用語辞書に登録', onClick: () => setGlossaryText(text) },
         {
-          label: highlight === text ? 'この語の強調をやめる' : `この語を本文で探す（${hits} か所）`,
+          label: highlight === text ? '強調をやめる' : `本文で探す（${hits}）`,
           onClick: () => setHighlight(highlight === text ? '' : text),
         },
         { label: 'コピー', onClick: () => navigator.clipboard?.writeText(text).catch(() => {}) },
@@ -1441,15 +1447,39 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [showHelp, setShowHelp] = useState(() => !storageGet('transcribe.helpSeen', false));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => storageGet('transcribe.sidebarCollapsed', false));
   const [jobMenu, setJobMenu] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [darkMode, setDarkMode] = useState(() => storageGet('transcribe.dark', true));
   const filterInitialized = useRef(false);
+  const searchRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : '');
     storageSet('transcribe.dark', darkMode);
   }, [darkMode]);
+
+  useEffect(() => { storageSet('transcribe.sidebarCollapsed', sidebarCollapsed); }, [sidebarCollapsed]);
+
+  // キーボードショートカット（入力中は無効）
+  useEffect(() => {
+    const onKey = (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed(c => !c);
+        return;
+      }
+      if (typing) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        setSidebarCollapsed(false);
+        setTimeout(() => searchRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const notify = useCallback((text, kind = 'info') => {
     const id = Math.random();
@@ -1543,7 +1573,7 @@ function App() {
     if (job.status === 'done') {
       if (enabledPost.includes('summarize')) {
         items.push({
-          label: 'まとめを作り直す', sub: 'AI の API を再度呼び出します',
+          label: 'まとめを作り直す',
           onClick: () => setConfirmAction({
             title: `ジョブ #${job.id} のまとめを作り直しますか？`,
             message: '現在の文字起こしからまとめを作り直します。AI の利用料金が発生します。',
@@ -1608,6 +1638,9 @@ function App() {
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <header className="app-header">
+        <button className="icon-btn" onClick={() => setSidebarCollapsed(c => !c)}
+          title={`ジョブ一覧を${sidebarCollapsed ? '開く' : '閉じる'}（Ctrl+B）`}
+          aria-label={`ジョブ一覧を${sidebarCollapsed ? '開く' : '閉じる'}`}>☰</button>
         <span className="app-title" onClick={() => go('add')}>transcribe<small>文字起こし・まとめ</small></span>
         <button className={`nav-btn${view === 'add' ? ' active' : ''}`} onClick={() => go('add')}>＋ 追加</button>
         <QueueIndicator jobs={jobs} queue={queue} onOpenJob={openJob} onCancel={cancelTask} />
@@ -1627,7 +1660,8 @@ function App() {
       )}
       <main className="app-main">
         <Sidebar jobs={jobs} filter={filter} setFilter={setFilter} selectedId={view === 'job' ? selectedJobId : null}
-          onSelect={openJob} onJobContextMenu={openJobMenu} enabledPost={enabledPost} />
+          onSelect={openJob} onJobContextMenu={openJobMenu} enabledPost={enabledPost}
+          collapsed={sidebarCollapsed} searchRef={searchRef} />
         <section className="main-content">
           {content}
           <LogPanel logs={logs} />

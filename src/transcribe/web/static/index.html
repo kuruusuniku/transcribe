@@ -55,6 +55,21 @@
       --warn-soft: rgba(210, 153, 34, 0.18);
     }
 
+    /* 細めのスクロールバー */
+    * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    *::-webkit-scrollbar { width: 10px; height: 10px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+    *::-webkit-scrollbar-thumb:hover { background: var(--text-dim); background-clip: content-box; }
+
+    /* キーボード操作時だけフォーカスリングを出す */
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation-duration: 0.01ms !important; }
+    }
+
     body {
       background: var(--bg);
       color: var(--text);
@@ -80,6 +95,7 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
+      transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
     }
     button:hover:not(:disabled), .file-btn:hover { background: var(--btn-hover); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -113,6 +129,10 @@
     }
     .app-title { font-size: 15px; font-weight: 700; cursor: pointer; margin-right: 8px; }
     .app-title small { font-weight: 400; color: var(--text-dim); font-size: 11px; margin-left: 6px; }
+    kbd {
+      font-family: inherit; font-size: 10.5px; padding: 1px 5px; border-radius: 4px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text-dim);
+    }
     .header-spacer { flex: 1; }
     .nav-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
     .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--failed); }
@@ -155,7 +175,24 @@
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
+      transition: width 0.18s ease, opacity 0.18s ease;
+      overflow: hidden;
     }
+    .sidebar.collapsed {
+      width: 0;
+      border-right: none;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .icon-btn {
+      padding: 4px 8px;
+      font-size: 15px;
+      line-height: 1;
+      background: none;
+      border-color: transparent;
+    }
+    .icon-btn:hover:not(:disabled) { background: var(--btn-hover); }
     .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
     .view { flex: 1; overflow-y: auto; padding: 20px 28px; }
     .view-narrow { max-width: 860px; }
@@ -197,6 +234,7 @@
       flex-direction: column;
       gap: 4px;
     }
+    .job-row { transition: background 0.12s ease; }
     .job-row:hover { background: var(--btn-hover); }
     .job-row.selected { background: var(--btn-hover); border-left-color: var(--accent); }
     .job-row.has-attention { border-left-color: var(--failed); }
@@ -300,6 +338,14 @@
     .menu button small { color: var(--text-dim); font-size: 10.5px; }
     .menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
 
+    .menu.context-menu {
+      position: fixed; z-index: 40;
+      min-width: 0; width: max-content; max-width: min(320px, 90vw);
+      /* 子の width:100% を避ける（max-content が画面幅に引きずられるため） */
+      display: flex; flex-direction: column;
+    }
+    .menu.context-menu button { width: auto; padding: 6px 12px; }
+
     .stage-track { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
     .stage-step {
       display: inline-flex; align-items: center; gap: 4px;
@@ -338,7 +384,7 @@
     .markdown mark.review { background: var(--warn-soft); color: inherit; padding: 0 2px; border-radius: 3px; }
     .markdown mark.hit { background: var(--accent); color: var(--accent-text); padding: 0 2px; border-radius: 3px; }
 
-    .context-menu { position: fixed; z-index: 40; }
+
 
     .edit-area { width: 100%; min-height: 60vh; font-family: 'Consolas', monospace; font-size: 13px; line-height: 1.6; resize: vertical; }
 
@@ -405,7 +451,7 @@
 
     /* ── モーダル・トースト ─────────────────────── */
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
-    .modal { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; padding: 20px 22px; box-shadow: 0 16px 48px rgba(0,0,0,0.35); }
+    .modal { animation: toast-in 0.15s ease; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; padding: 20px 22px; box-shadow: 0 16px 48px rgba(0,0,0,0.35); }
     .modal.wide { max-width: 760px; }
     .modal h2 { font-size: 16px; margin-bottom: 10px; }
     .modal p { line-height: 1.7; }
@@ -417,8 +463,10 @@
     .modal dt { font-weight: 600; }
     .modal dd { color: var(--text-dim); }
 
+    @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
     .toasts { position: fixed; right: 16px; bottom: 44px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
-    .toast { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; min-width: 260px; max-width: 420px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); line-height: 1.5; }
+    .toast { animation: toast-in 0.18s ease; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; min-width: 260px; max-width: 420px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); line-height: 1.5; }
     .toast.error { border-left-color: var(--failed); }
     .toast.success { border-left-color: var(--done); }
 
