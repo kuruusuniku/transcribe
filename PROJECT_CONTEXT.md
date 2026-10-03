@@ -358,4 +358,5 @@ Web UI の「＋ 追加」に URL / 録音ファイルを入れると、以下�
 | コマンド・設定のリファレンス | `USAGE.md` |
 | 開発の経緯・構成（本ファイル） | `PROJECT_CONTEXT.md` |
 | 開発上の注意点 | `HANDOVER.md` |
+| 直近セッションの引き継ぎ | `HANDOVER_NEXT.md` |
 | 初期構築時の指示書（歴史的資料） | `CLAUDE_CODE_PROMPT.md` |
