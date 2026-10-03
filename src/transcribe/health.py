@@ -83,7 +83,7 @@ def collect_checks(cfg: AppConfig, glossary_path: Path | None = None) -> list[Ch
     elif not s.resolve_api_key():
         env = "GEMINI_API_KEY" if s.provider == "gemini" else "ANTHROPIC_API_KEY"
         checks.append(Check("summarize", "まとめ生成（LLM）", "error", f"{s.provider} の API キーが未設定",
-                            f"config.yaml の summarize.*_api_key または環境変数 {env} を設定してください"))
+                            f"`transcribe secrets set` / 環境変数 {env} / config.yaml の summarize.*_api_key のいずれかで設定してください"))
     else:
         model = s.gemini_model if s.provider == "gemini" else s.anthropic_model
         checks.append(Check("summarize", "まとめ生成（LLM）", "ok", f"{s.provider} / {model}", testable=True))
@@ -108,9 +108,9 @@ def collect_checks(cfg: AppConfig, glossary_path: Path | None = None) -> list[Ch
     n = cfg.notion
     if not n.enabled:
         checks.append(Check("notion", "Notion 同期", "off", "無効"))
-    elif not n.token or not n.database_id:
+    elif not n.resolve_token() or not n.database_id:
         checks.append(Check("notion", "Notion 同期", "error", "token または database_id が未設定",
-                            "config.yaml の notion.token と notion.database_id を設定してください"))
+                            "`transcribe secrets set notion_token`（または NOTION_TOKEN / notion.token）と notion.database_id を設定してください"))
     else:
         detail = "体育動画 DB 設定済み" + (
             "・叡智講義 DB 設定済み" if n.local_database_id else "（叡智講義も体育動画 DB に登録）"
@@ -154,7 +154,7 @@ def run_connection_test(cfg: AppConfig, key: str) -> Check:
                     continue
                 resp = httpx.get(
                     f"https://api.notion.com/v1/databases/{db_id}",
-                    headers={"Authorization": f"Bearer {n.token}", "Notion-Version": "2022-06-28"},
+                    headers={"Authorization": f"Bearer {n.resolve_token()}", "Notion-Version": "2022-06-28"},
                     timeout=15,
                 )
                 if resp.status_code == 200:
@@ -167,7 +167,7 @@ def run_connection_test(cfg: AppConfig, key: str) -> Check:
                         "データベースの「…」→「接続」でインテグレーションを追加しているか確認してください"
                     )
                 elif resp.status_code == 401:
-                    return Check("notion", "Notion 同期", "error", "トークンが無効です（notion.token を確認してください）")
+                    return Check("notion", "Notion 同期", "error", "トークンが無効です（notion_token の設定を確認してください）")
                 else:
                     resp.raise_for_status()
             return Check("notion", "Notion 同期", "error" if failed else "ok", " / ".join(results))

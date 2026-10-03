@@ -402,7 +402,7 @@ def _query_notion_db(cfg: NotionConfig, video_url: str, database_id: str) -> lis
             resp = httpx.post(
                 f"https://api.notion.com/v1/databases/{database_id}/query",
                 headers={
-                    "Authorization": f"Bearer {cfg.token}",
+                    "Authorization": f"Bearer {cfg.resolve_token()}",
                     "Notion-Version": "2022-06-28",
                     "Content-Type": "application/json",
                 },
@@ -451,10 +451,10 @@ def sync_to_notion(output_dir: Path, video_url: str, cfg: NotionConfig, source_t
         date_str = _date_from_title(title)
     duration_min = _duration_minutes(meta, output_dir)
 
-    client = Client(auth=cfg.token)
+    client = Client(auth=cfg.resolve_token())
     tags = _extract_tags_from_summary(summary_text)
     props = _build_properties(title, date_str, video_url, duration_min, source_type, tags)
-    props = _fit_properties_to_schema(props, _get_db_schema(cfg.token, target_db_id))
+    props = _fit_properties_to_schema(props, _get_db_schema(cfg.resolve_token(), target_db_id))
     blocks = md_to_blocks(summary_text)
 
     existing_page_id: str | None = None

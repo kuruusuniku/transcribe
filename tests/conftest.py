@@ -18,3 +18,11 @@ def no_notion_schema_request():
     notion_sync._schema_cache.clear()
     with patch.object(notion_sync, "_get_db_schema", return_value=None):
         yield
+
+
+@pytest.fixture(autouse=True)
+def isolate_secrets(monkeypatch):
+    """実機の OS 保管庫（keyring）や環境変数のキーがテストに混ざらないようにする。"""
+    monkeypatch.setenv("TRANSCRIBE_NO_KEYRING", "1")
+    for var in ("GEMINI_API_KEY", "ANTHROPIC_API_KEY", "NOTION_TOKEN", "TRANSCRIBE_WEB_TOKEN"):
+        monkeypatch.delenv(var, raising=False)

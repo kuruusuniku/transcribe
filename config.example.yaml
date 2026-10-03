@@ -1,3 +1,7 @@
+# API キー・トークンは `transcribe secrets set <name>` で OS の保管庫に保存するのがおすすめです。
+# 読み込みの優先順位: OS の保管庫（keyring）→ 環境変数 → この config.yaml。
+# name: gemini_api_key / anthropic_api_key / notion_token / web_token
+
 paths:
   work_dir: ./data/work
   output_dir: ./data/output

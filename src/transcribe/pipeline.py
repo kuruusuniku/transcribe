@@ -372,7 +372,7 @@ def enabled_post_stages(cfg: AppConfig) -> list[str]:
         stages.append("summarize")
     if cfg.google_docs.enabled and cfg.google_docs.root_folder_id:
         stages.append("docs_sync")
-    if cfg.notion.enabled and cfg.notion.database_id and cfg.notion.token:
+    if cfg.notion.enabled and cfg.notion.database_id and cfg.notion.resolve_token():
         stages.append("notion_sync")
     return stages
 

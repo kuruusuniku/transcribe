@@ -499,7 +499,7 @@ def summarize(
         cfg_key = "gemini_api_key" if provider == "gemini" else "anthropic_api_key"
         console.print(
             f"[yellow]{provider} の API キーが設定されていません。[/yellow]\n"
-            f"config.yaml の summarize.{cfg_key} または 環境変数 {env_var} を設定してください。"
+            f"`transcribe secrets set {cfg_key}` で保存するか、環境変数 {env_var} / config.yaml の summarize.{cfg_key} を設定してください。"
         )
         raise typer.Exit(1)
 
@@ -578,10 +578,10 @@ def sync_notion(
         )
         raise typer.Exit(0)
 
-    if not cfg.notion.token or not cfg.notion.database_id:
+    if not cfg.notion.resolve_token() or not cfg.notion.database_id:
         console.print(
             "[yellow]Notion の token または database_id が未設定です。[/yellow]\n"
-            "config.yaml で notion.token と notion.database_id を設定してください。"
+            "`transcribe secrets set notion_token`（または環境変数 NOTION_TOKEN / config.yaml の notion.token）と notion.database_id を設定してください。"
         )
         raise typer.Exit(0)
 
@@ -733,8 +733,8 @@ def web(
     is_loopback = actual_host in ("127.0.0.1", "localhost", "::1")
     if not token and not is_loopback and not insecure:
         console.print(
-            "[red]外部公開（host={}）にはトークンが必要です。config.yaml の web.token "
-            "または環境変数 TRANSCRIBE_WEB_TOKEN を設定してください（--insecure で強制起動）。[/red]".format(actual_host)
+            "[red]外部公開（host={}）にはトークンが必要です。`transcribe secrets set web_token`、"
+            "環境変数 TRANSCRIBE_WEB_TOKEN、config.yaml の web.token のいずれかを設定してください（--insecure で強制起動）。[/red]".format(actual_host)
         )
         raise typer.Exit(1)
     # サーバー側の設定は環境変数で渡し、lifespan で適用する（--reload の子プロセスにも引き継ぐため）
@@ -830,3 +830,84 @@ def clean() -> None:
         console.print("[yellow]削除対象ファイルなし[/yellow]")
     else:
         console.print(f"[green]{deleted} 件を削除しました[/green]")
+
+
+# ── secrets: API キー・トークンを OS の保管庫（keyring）に保存する ──────────
+
+secrets_app = typer.Typer(help="API キー・トークンを OS の保管庫に保存する（keyring → 環境変数 → config.yaml の順で使われる）")
+app.add_typer(secrets_app, name="secrets")
+
+
+def _secret_names_help() -> str:
+    from .secrets import SECRETS
+
+    return "\n".join(f"  {k}: {desc}（環境変数 {env}）" for k, (env, desc) in SECRETS.items())
+
+
+@secrets_app.command("set")
+def secrets_set(
+    name: str = typer.Argument(..., help="gemini_api_key / anthropic_api_key / notion_token / web_token"),
+) -> None:
+    """値を OS の保管庫に保存する（入力は画面に表示されない）"""
+    from .secrets import SECRETS, set_secret
+
+    if name not in SECRETS:
+        console.print(f"[red]未知の名前です: {name}[/red]\n使える名前:\n{_secret_names_help()}")
+        raise typer.Exit(1)
+    value = typer.prompt(SECRETS[name][1], hide_input=True, confirmation_prompt=True).strip()
+    if not value:
+        console.print("[red]空の値は保存できません。[/red]")
+        raise typer.Exit(1)
+    try:
+        set_secret(name, value)
+    except Exception as e:
+        console.print(f"[red]保存に失敗しました: {e}[/red]")
+        raise typer.Exit(1)
+    console.print(
+        f"[green]{name} を OS の保管庫に保存しました。[/green]\n"
+        "config.yaml に同じ値が平文で残っている場合は削除してください（保管庫の値が優先されます）。"
+    )
+
+
+@secrets_app.command("delete")
+def secrets_delete(name: str = typer.Argument(..., help="削除する名前")) -> None:
+    """OS の保管庫から値を削除する"""
+    from .secrets import SECRETS, delete_secret
+
+    if name not in SECRETS:
+        console.print(f"[red]未知の名前です: {name}[/red]\n使える名前:\n{_secret_names_help()}")
+        raise typer.Exit(1)
+    try:
+        removed = delete_secret(name)
+    except Exception as e:
+        console.print(f"[red]削除に失敗しました: {e}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]{name} を削除しました。[/green]" if removed else f"[yellow]{name} は保存されていません。[/yellow]")
+
+
+@secrets_app.command("list")
+def secrets_list() -> None:
+    """各キーがどこから読まれているかを表示する（値そのものは表示しない）"""
+    from .secrets import SECRETS, secret_source
+
+    cfg_values = {k: "" for k in SECRETS}
+    if _CONFIG_PATH.exists():
+        cfg = load_config(_CONFIG_PATH)
+        cfg_values = {
+            "gemini_api_key": cfg.summarize.gemini_api_key,
+            "anthropic_api_key": cfg.summarize.anthropic_api_key,
+            "notion_token": cfg.notion.token,
+            "web_token": cfg.web.token,
+        }
+    labels = {"keyring": "OS の保管庫", "env": "環境変数", "config": "config.yaml（平文）", "": "未設定"}
+    table = Table(title="API キー・トークンの読み込み元")
+    table.add_column("名前")
+    table.add_column("読み込み元")
+    table.add_column("環境変数名")
+    for name, (env, _desc) in SECRETS.items():
+        src = secret_source(name, cfg_values.get(name, ""))
+        style = "yellow" if src == "config" else ("dim" if not src else "green")
+        table.add_row(name, f"[{style}]{labels[src]}[/{style}]", env)
+    console.print(table)
+    if any(cfg_values.values()):
+        console.print("[yellow]config.yaml に平文の値があります。保管庫に移したら config.yaml から削除してください。[/yellow]")

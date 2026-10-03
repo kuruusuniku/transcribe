@@ -456,8 +456,15 @@ def test_call_claude_503_retry_logs_warning(caplog):
 # ─── SummarizeConfig.resolve_api_key ──────────────────────────────────────
 
 
-def test_resolve_api_key_config_takes_precedence(monkeypatch):
+def test_resolve_api_key_env_takes_precedence_over_config(monkeypatch):
+    # 優先順位は keyring → 環境変数 → config.yaml
     monkeypatch.setenv("GEMINI_API_KEY", "env_value")
+    cfg = SummarizeConfig(provider="gemini", gemini_api_key="cfg_value")
+    assert cfg.resolve_api_key() == "env_value"
+
+
+def test_resolve_api_key_uses_config_without_env(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     cfg = SummarizeConfig(provider="gemini", gemini_api_key="cfg_value")
     assert cfg.resolve_api_key() == "cfg_value"
 

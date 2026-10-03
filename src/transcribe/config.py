@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from .secrets import get_secret
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +95,9 @@ class SummarizeConfig:
 
     def resolve_api_key(self) -> str:
         if self.provider == "gemini":
-            return self.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
+            return get_secret("gemini_api_key", self.gemini_api_key)
         if self.provider == "claude":
-            return self.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+            return get_secret("anthropic_api_key", self.anthropic_api_key)
         return ""
 
 
@@ -107,6 +108,9 @@ class NotionConfig:
     database_id: str = ""
     local_database_id: str = ""
 
+    def resolve_token(self) -> str:
+        return get_secret("notion_token", self.token)
+
 
 @dataclass
 class WebConfig:
@@ -115,7 +119,7 @@ class WebConfig:
     token: str = ""
 
     def resolve_token(self) -> str:
-        return self.token or os.environ.get("TRANSCRIBE_WEB_TOKEN", "")
+        return get_secret("web_token", self.token)
 
 
 @dataclass
