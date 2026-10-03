@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .routes import commands, files, jobs
 from .routes.glossary import router as glossary_router
-from .security import AccessControlMiddleware
+from .security import AccessControlMiddleware, install_log_redaction
 from . import output_router
 from .worker import worker
 from .ws import log_stream
@@ -26,6 +26,7 @@ async def lifespan(_app: FastAPI):
         # `transcribe web` から起動された場合のみ（テストでは適用しない）
         # ワーカースレッドで実行するコマンドの出力をタスクログに流す
         output_router.install()
+        install_log_redaction()
         _app.state.auth_token = os.environ.get("TRANSCRIBE_WEB_TOKEN") or None
     worker.ensure_started()
     yield

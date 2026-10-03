@@ -473,3 +473,32 @@ def test_jobs_include_notion_url(client, mock_config, tmp_db, tmp_output):
     job = next(j for j in client.get("/api/jobs").json() if j["id"] == job_id)
     assert job["notion_url"] == "https://www.notion.so/3e33a9eeef9a815c8945c47ada501d89"
     assert client.get(f"/api/jobs/{job_id}").json()["notion_url"] == job["notion_url"]
+
+
+# ─── アクセスログのトークン伏せ字 ─────────────────────────────────────────
+
+
+def test_access_log_redacts_token():
+    import logging
+
+    from transcribe.web.security import RedactTokenFilter
+
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, "", 0,
+        '%s - "%s %s HTTP/%s" %d',
+        ("100.89.154.107:1", "GET", "/?token=secret-value", "1.1", 303), None,
+    )
+    assert RedactTokenFilter().filter(record) is True
+    assert "secret-value" not in record.getMessage()
+    assert "token=***" in record.getMessage()
+
+
+def test_install_log_redaction_is_idempotent():
+    import logging
+
+    from transcribe.web.security import RedactTokenFilter, install_log_redaction
+
+    install_log_redaction()
+    install_log_redaction()
+    filters = [f for f in logging.getLogger("uvicorn.access").filters if isinstance(f, RedactTokenFilter)]
+    assert len(filters) == 1

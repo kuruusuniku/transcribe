@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import hmac
+import logging
+import re
 from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, urlparse
 
@@ -16,6 +18,32 @@ from starlette.responses import PlainTextResponse, RedirectResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 COOKIE_NAME = "transcribe_token"
+
+_TOKEN_IN_URL_RE = re.compile(r"token=[^\s\"&]+")
+_REDACTED = "token=***"
+
+
+class RedactTokenFilter(logging.Filter):
+    """アクセスログに残る ?token=... を伏せる（履歴やログからのトークン流出を防ぐ）。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = _TOKEN_IN_URL_RE.sub(_REDACTED, record.msg)
+        if record.args:
+            record.args = tuple(
+                _TOKEN_IN_URL_RE.sub(_REDACTED, a) if isinstance(a, str) else a
+                for a in record.args
+            )
+        return True
+
+
+def install_log_redaction() -> None:
+    """uvicorn のアクセスログなどからトークンを伏せる。"""
+    log_filter = RedactTokenFilter()
+    for name in ("uvicorn.access", "uvicorn.error", "uvicorn"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, RedactTokenFilter) for f in logger.filters):
+            logger.addFilter(log_filter)
 
 
 def _headers(scope: Scope) -> dict[str, str]:
