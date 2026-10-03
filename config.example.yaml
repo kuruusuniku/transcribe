@@ -111,7 +111,7 @@ notion:
   #          uv run transcribe sync-notion --all
   #          uv run transcribe sync-notion --id 13
   enabled: false
-  token: ""             # Notion Internal Integration Secret
+  token: ""             # Notion Internal Integration Secret（secrets set notion_token / 環境変数 NOTION_TOKEN でも可）
   database_id: ""       # 同期先 DB の ID（32 桁英数字）
   local_database_id: ""  # 叡智講義（録音ファイル）用 Notion DB ID（空なら database_id を使用）
 

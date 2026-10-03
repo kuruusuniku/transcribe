@@ -43,18 +43,17 @@ serve を止めるときは `tailscale serve --https=443 off`。
 ## 3. 次にやること（優先順）
 
 ### すぐ
-1. **`4f49a03` を push**
-2. **Gemini を有料へ切り替え**（手順は本メモ 5 章）。無料枠のままだと送信内容が学習に使われうる
-3. **キーの再発行を検討**: 前セッションのログに Notion トークン / Anthropic キー / web.token が
-   表示されている。会話ログを共有する予定があるなら再発行する
+1〜3（push / Gemini 有料化 / キー再発行）は完了済み
 
 ### 合意済みで未着手
-4. **API キーを平文で持たない対応（案 2 で合意、未実装）**
-   - `keyring` で OS の保管庫に保存（Windows=資格情報マネージャー / macOS=キーチェーン）
-   - 優先順位は「keyring → 環境変数 → config.yaml」。既存の使い方を壊さない
-   - `transcribe secrets set <name>` のような登録コマンドを用意する
-   - Notion トークンには環境変数のフォールバックが未実装（Gemini / Anthropic / web.token は実装済み）
-   - 併せて `icacls config.yaml` でアクセス権を絞る案もある
+4. **API キーを平文で持たない対応 → 実装済み（2026-10-03, ブランチ `claude/exciting-hamilton-5gzavp`）**。残作業:
+   - `uv lock && uv sync`（`keyring` を pyproject.toml に追加済み。クラウド環境からは lock を更新できなかった）
+   - テスト実行（`tests/test_secrets.py` を追加、`test_summarize.py` の優先順位テストを更新）
+   - `transcribe secrets set gemini_api_key` / `notion_token` / `web_token`（必要なら `anthropic_api_key`）
+   - `transcribe secrets list` で読み込み元が「OS の保管庫」になったのを確認し、config.yaml の平文の値を消す
+   - Web UI を再起動
+   - 優先順位は keyring → 環境変数 → config.yaml（**以前は config.yaml が環境変数より優先だった**）
+   - `TRANSCRIBE_NO_KEYRING=1` で keyring を無視できる。任意で `icacls config.yaml` によるアクセス権の絞り込み
 
 ### 判断待ち
 5. 叡智まとめDB の「カテゴリー」の決め方（現在は空欄で登録）
