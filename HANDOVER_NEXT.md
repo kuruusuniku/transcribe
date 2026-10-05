@@ -10,9 +10,9 @@
 | 項目 | 状態 |
 |---|---|
 | Web UI | `127.0.0.1:8000` で稼働中（ループバックのみ） |
-| 外部公開 | `tailscale serve` で `https://wakamas-pc.tail9ad9e7.ts.net/` に HTTPS 公開（tailnet 内のみ） |
+| 外部公開 | `tailscale serve` で `https://<PC名>.<tailnet名>.ts.net/` に HTTPS 公開（tailnet 内のみ） |
 | 認証 | `config.yaml` の `web.token`。初回だけ `/?token=<token>` で開くと Cookie が入る |
-| 端末 | PC `wakamas-pc`(100.89.154.107) / iPhone `iphone175`(100.127.191.75) |
+| 端末 | PC 1 台 / iPhone 1 台（マシン名・IP は Tailscale 管理画面で確認） |
 | 文字起こしモデル | `large-v3-turbo`（2026-09 に large-v3 から変更。3〜5 倍速、精度はほぼ同等） |
 | まとめ | Gemini 2.5 Flash（**無料枠のまま**。有料化は未実施） |
 | テスト | 295 件すべてパス（2026-09-24 時点、ユーザーが手動実行） |
@@ -86,7 +86,7 @@ serve を止めるときは `tailscale serve --https=443 off`。
 
 1. [AI Studio の API キー画面](https://aistudio.google.com/apikey)で `transcribe-summarize` の
    「お支払い情報を設定」をクリック
-2. 請求先アカウントを作成・リンク（プロジェクト `gen-lang-client-0202091303`）
+2. 請求先アカウントを作成・リンク（AI Studio が作った `gen-lang-client-…` のプロジェクト）
 3. [予算とアラート](https://console.cloud.google.com/billing/budgets)で月 500 円程度の警告を設定
 
 費用の実測: 1 本あたり入力 約 18,000 / 出力 約 6,500 トークン。

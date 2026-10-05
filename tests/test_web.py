@@ -486,7 +486,7 @@ def test_access_log_redacts_token():
     record = logging.LogRecord(
         "uvicorn.access", logging.INFO, "", 0,
         '%s - "%s %s HTTP/%s" %d',
-        ("100.89.154.107:1", "GET", "/?token=secret-value", "1.1", 303), None,
+        ("100.64.0.1:1", "GET", "/?token=secret-value", "1.1", 303), None,
     )
     assert RedactTokenFilter().filter(record) is True
     assert "secret-value" not in record.getMessage()
