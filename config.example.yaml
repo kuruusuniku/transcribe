@@ -17,6 +17,7 @@ youtube:
   # Chrome 127以降は App-Bound Encryption により yt-dlp から Cookie を
   # 読み出せなくなりました。Edge も同じChromiumベースのため同様の問題が
   # 発生する可能性があります。Firefox はこの制限がないため安定動作します。
+  # Mac ではこの制限はなく、safari も指定できます。
   cookies_from_browser: firefox
 
 audio_separation:
@@ -33,7 +34,7 @@ audio_separation:
   # 1時間動画での処理時間追加: 約50分(VRAM 4GB環境)
   enabled: false
   model: htdemucs
-  device: cuda
+  device: cuda   # Mac は cpu
 
 transcription:
   model: large-v3-turbo   # large-v3 より約 3〜5 倍速い（精度はほぼ同等）。精度優先なら large-v3
@@ -42,6 +43,7 @@ transcription:
   # int8_float16   : VRAM 4-6GBのTensor Core対応GPU向け（推奨）
   # float16        : VRAM 8GB以上の環境向け（高品質）
   # float32        : 最高品質（VRAM 12GB以上推奨）
+  # Mac（GPU 非対応・CPU で実行）は device: cpu / compute_type: int8 にする
   compute_type: int8_float16
   device: cuda
   language: ja

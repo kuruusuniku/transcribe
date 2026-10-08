@@ -19,6 +19,7 @@ uv run transcribe doctor --test
 |---|---|---|
 | `cookies` / `browser` / `Sign in to confirm` | Firefox が起動中で Cookie を読めない、または未ログイン | Firefox を完全に終了（タスクトレイも確認）してから再開 |
 | `CUDA out of memory` | GPU のメモリ不足 | 下の「GPU のメモリが足りない」を参照 |
+| `not compiled with CUDA support` | Mac で `device: cuda` のまま | README の「Mac で使う場合」のとおり `device: cpu` にする |
 | `No such file` / `見つかりません` | 元の音声ファイルが移動・削除された | ファイルを戻すか、もう一度追加し直す |
 | `HTTP Error 403` / `Unsupported URL` | 非公開動画・URL の誤り | URL と公開設定を確認 |
 

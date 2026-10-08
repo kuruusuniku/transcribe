@@ -22,13 +22,35 @@
 
 ## セットアップ
 
-1. **前提**: Python 3.13+, uv, Firefox, NVIDIA GPU (CUDA)
+1. **前提**: Python 3.13+, uv, ffmpeg, Firefox
+   - Windows: NVIDIA GPU (CUDA)
+   - Mac: Apple Silicon（`brew install uv ffmpeg` で入れられる。Python は uv が自動で用意する）
 2. **依存インストール**: `uv sync`
 3. **設定ファイル作成**: `cp config.example.yaml config.yaml`（PowerShell では `Copy-Item config.example.yaml config.yaml`）
 4. **config.yaml の各セクションを環境に合わせて編集**（編集後は `uv run transcribe doctor` で確認）
    - `youtube.cookies_from_browser`: Windows では `firefox`（Chrome 127+ は Cookie 暗号化で不可）
    - `transcription.compute_type`: GTX 1050 Ti 等の古い GPU は `int8`、RTX 系 VRAM 4-6GB は `int8_float16`、8GB+ は `float16`
    - `audio_separation.enabled`: `false` 推奨（後述「実運用での知見」参照）
+   - Mac の場合は下の「Mac で使う場合」の設定も必要
+
+### Mac で使う場合
+
+文字起こしエンジン（faster-whisper）は Mac の GPU に対応していないため、CPU で動かします。
+`config.yaml` を次のように変更してください（`device: cuda` のままだと文字起こしで
+`This CTranslate2 package was not compiled with CUDA support` というエラーになります）。
+
+```yaml
+transcription:
+  device: cpu
+  compute_type: int8      # CPU で使えるのは int8 / int8_float32 / float32
+
+audio_separation:
+  device: cpu             # 音声分離を有効にする場合のみ関係する
+```
+
+- 文字起こしは GPU の環境より時間がかかります
+- `youtube.cookies_from_browser`: Mac には Windows の Chrome の制限（App-Bound Encryption）がないため、
+  普段使っているブラウザ（`firefox` / `chrome` / `safari` など）を指定できます
 
 ### Google Docs 同期（任意）
 
